@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARS Browser UI</title>
+<style>
+  :root{--bg:#0f1117;--panel:#171b24;--panel2:#1d2330;--border:#2d3445;--text:#e6edf3;--muted:#8b98ad;--accent:#58a6ff;--good:#3fb950;--warn:#d29922}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Arial,sans-serif}
+  header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);background:#0b0e14}
+  #app{display:flex;height:calc(100vh - 58px)} .panel{display:flex;flex-direction:column;min-width:0}
+  #agents{width:24%;border-right:1px solid var(--border);background:var(--panel)}
+  #feed{width:36%;border-right:1px solid var(--border);background:var(--panel2)}
+  #chat{flex:1;background:var(--panel)} .title{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:700}
+  .list{flex:1;overflow:auto;padding:10px} .agent{padding:10px;border:1px solid var(--border);border-radius:10px;background:#121722;margin-bottom:8px;cursor:pointer}
+  .agent.current{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset} .meta,.small{color:var(--muted);font-size:12px}
+  .item,.msg,.ctx{padding:10px;border:1px solid var(--border);border-radius:10px;background:#101520;margin-bottom:8px;white-space:pre-wrap;word-break:break-word}
+  .msg.out{border-color:#234c7f}.msg.in{border-color:#315f3a} .row{display:flex;justify-content:space-between;gap:8px}.pill{padding:2px 8px;border-radius:999px;background:#20283a;color:var(--muted);font-size:11px}
+  #composer{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border);background:#0b0e14} input,button{border-radius:10px;border:1px solid var(--border);background:#111827;color:var(--text);padding:10px 12px}
+  input{flex:1} button{cursor:pointer;background:var(--accent);color:#fff;border:none;font-weight:700} #status.ok{color:var(--good)} #status.bad{color:#ff7b72}
+  .contexts{padding:10px;border-top:1px solid var(--border);max-height:28%;overflow:auto;background:#101520}
+</style>
+</head>
+<body>
+<header>
+  <div><strong>MARS Browser UI</strong> <span class="small">WebSocket client</span></div>
+  <div id="status" class="bad">disconnected</div>
+</header>
+<div id="app">
+  <section id="agents" class="panel">
+    <div class="title">Agents</div>
+    <div id="agentList" class="list"></div>
+    <div class="title">Contexts</div>
+    <div id="contextList" class="contexts"></div>
+  </section>
+  <section id="feed" class="panel">
+    <div class="title">Activity Feed</div>
+    <div id="feedList" class="list"></div>
+  </section>
+  <section id="chat" class="panel">
+    <div class="title" id="chatTitle">Chat</div>
+    <div id="chatList" class="list"></div>
+    <div id="composer">
+      <input id="input" placeholder="Type a message or /command">
+      <button id="send">Send</button>
+    </div>
+  </section>
+</div>
+<script>
+let state = { agents: {}, feed: [], contexts: [], chats: {}, current_agent: null, status: '' };
+let ws = null;
+const $ = (id) => document.getElementById(id);
+
+function updateStatus(text, ok=false){ const el=$('status'); el.textContent=text; el.className=ok?'ok':'bad'; }
+function esc(v){ return String(v ?? '').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+function sortAgents(){ return Object.entries(state.agents).sort((a,b)=>a[0].localeCompare(b[0])); }
+
+function render(){
+  $('chatTitle').textContent = state.current_agent ? `Chat · ${state.current_agent}` : 'Chat';
+  $('agentList').innerHTML = sortAgents().map(([aid, rec]) => {
+    const current = aid === state.current_agent ? ' current' : '';
+    const skills = rec.skills?.length ? rec.skills.join(', ') : 'none';
+    const reply = rec.has_reply ? ' · reply ready' : '';
+    return `<div class="agent${current}" data-aid="${esc(aid)}"><div class="row"><strong>${esc(rec.avatar || '🤖')} ${esc(aid)}</strong></div><div class="meta">${esc(rec.agent_type || 'Agent')} · ${esc(rec.fsm_state || '—')}${reply}</div><div class="small">skills: ${esc(skills)}</div></div>`;
+  }).join('');
+  $('feedList').innerHTML = state.feed.map(item => `<div class="item"><div class="row"><strong>${esc(item.from_id || item.event_type || 'event')}</strong><span class="small">${esc((item.ts || '').replace('T',' ').slice(0,19))}</span></div><div>${esc(item.snippet || `${item.from_id || ''} → ${item.to_id || ''}`)}</div><div class="small">${esc(item.performative || item.event_type || '')}</div></div>`).join('');
+  const msgs = state.current_agent ? (state.chats[state.current_agent] || []) : [];
+  $('chatList').innerHTML = msgs.map(msg => `<div class="msg ${esc(msg.direction || 'in')}" title="${esc(msg.ts || '')}"><div class="row"><strong>${esc(msg.sender || '')}</strong><span class="small">${esc((msg.ts || '').replace('T',' ').slice(0,19))}</span></div><div>${esc(msg.content || '')}</div></div>`).join('');
+  $('contextList').innerHTML = state.contexts.map(ctx => `<div class="ctx"><div class="row"><strong>${esc(ctx.id)}</strong><span class="pill">${esc(ctx.status)}</span></div><div>${esc(ctx.description)}</div><div class="small">agents: ${esc((ctx.agents || []).join(', ') || 'unassigned')}</div></div>`).join('');
+  document.querySelectorAll('.agent').forEach(el => el.onclick = () => switchAgent(el.dataset.aid));
+}
+
+function ensureChat(aid){ if (!state.chats[aid]) state.chats[aid] = []; }
+function setCurrentAgent(aid){ state.current_agent = aid || state.current_agent; render(); }
+function switchAgent(aid){ if (!aid || !ws || ws.readyState !== WebSocket.OPEN) return; ws.send(JSON.stringify({t:'cmd', text:`/switch ${aid}`})); state.current_agent = aid; render(); }
+
+function applyEvent(ev){
+  const t = ev.t;
+  if (t === 'state') {
+    state = { agents: ev.agents || {}, feed: ev.feed || [], contexts: ev.contexts || ev.problems || [], chats: ev.chats || {}, current_agent: ev.current_agent || null, status: '' };
+    if (!state.current_agent) state.current_agent = Object.keys(state.agents).find(a => a !== 'cli-user') || null;
+  } else if (t === 'spawn') {
+    state.agents[ev.agent_id] = { ...(state.agents[ev.agent_id] || {}), ...ev };
+    ensureChat(ev.agent_id);
+    if (!state.current_agent && ev.agent_id !== 'cli-user') state.current_agent = ev.agent_id;
+  } else if (t === 'despawn') {
+    delete state.agents[ev.agent_id];
+    delete state.chats[ev.agent_id];
+    if (state.current_agent === ev.agent_id) state.current_agent = Object.keys(state.agents).find(a => a !== 'cli-user') || null;
+  } else if (t === 'feed') {
+    state.feed.unshift(ev); state.feed = state.feed.slice(0, 30);
+  } else if (t === 'chat') {
+    ensureChat(ev.agent_id); state.chats[ev.agent_id].push(ev);
+  } else if (t === 'reply') {
+    if (state.agents[ev.agent_id]) { state.agents[ev.agent_id].has_reply = !!ev.has_reply; state.agents[ev.agent_id].pending_reply = ev.content || ''; }
+  } else if (t === 'fsm') {
+    if (state.agents[ev.agent_id]) Object.assign(state.agents[ev.agent_id], ev);
+  } else if (t === 'status') {
+    state.status = ev.text || '';
+  } else if (t === 'context_add') {
+    state.contexts.push(ev);
+  } else if (t === 'context_update') {
+    const i = state.contexts.findIndex(c => c.id === ev.id); if (i >= 0) state.contexts[i] = { ...state.contexts[i], ...ev }; else state.contexts.push(ev);
+  } else if (t === 'client_connect' || t === 'client_disconnect') {
+    state.feed.unshift({ ts: new Date().toISOString(), event_type: 'fed', from_id: 'server', snippet: `${t === 'client_connect' ? '🔌 connected' : '🔌 disconnected'}: ${ev.addr || '?'}`, performative: 'INFORM' });
+    state.feed = state.feed.slice(0, 30);
+  } else if (t === 'switch') {
+    state.current_agent = ev.current_agent || null;
+  }
+  render();
+}
+
+function sendInput(text){
+  if (!ws || ws.readyState !== WebSocket.OPEN || !text.trim()) return;
+  if (text.startsWith('/')) ws.send(JSON.stringify({t:'cmd', text}));
+  else ws.send(JSON.stringify({t:'msg', target: state.current_agent, text}));
+}
+
+function connect(){
+  ws = new WebSocket('ws://localhost:7434');
+  ws.onopen = () => { updateStatus('connected', true); ws.send(JSON.stringify({t:'hello', name:'browser', role:'human', current_agent: state.current_agent})); };
+  ws.onmessage = (e) => applyEvent(JSON.parse(e.data));
+  ws.onclose = () => { updateStatus('disconnected'); setTimeout(connect, 3000); };
+  ws.onerror = () => updateStatus('error');
+}
+
+$('send').onclick = () => { const input = $('input'); sendInput(input.value); input.value = ''; };
+$('input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { $('send').click(); } });
+connect();
+</script>
+</body>
+</html>
