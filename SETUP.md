@@ -30,7 +30,7 @@ MARS starts and all tests run (skipping unavailable providers) without any of th
 
 | Tool | Why you need it | Install |
 |------|----------------|---------|
-| **GitHub CLI (`gh`)** | Copilot auth — `gh auth login` stores an OAuth token that MARS reads automatically | [cli.github.com](https://cli.github.com) · `winget install GitHub.cli` · `brew install gh` |
+| **GitHub CLI (`gh`)** | Copilot auth — `gh auth login` stores an OAuth token in a config file that MARS reads automatically (no `gh` on PATH needed after login) | [cli.github.com](https://cli.github.com) · `winget install GitHub.cli` · `brew install gh` |
 | **Ollama** | Local LLM inference — free, no API key | [ollama.com/download](https://ollama.com/download) · `winget install Ollama.Ollama` · `brew install ollama` |
 | **GitHub MCP server binary** | GitHub service agent — search repos, manage issues/PRs | Pre-bundled at `mars/runtime/agents/bin/github-mcp-server.exe`; see §5 below |
 
@@ -97,9 +97,9 @@ cp .env.example .env
 
 Open `.env` and fill in whichever provider settings you want to use.
 
-### Anthropic / Claude — paid, top-tier quality
+### Anthropic / Claude — paid, requires API key
 
-Anthropic is the only **paid** provider currently shipped. Set your API key and you can chat with any current Claude model:
+Anthropic Claude requires a paid API key. It uses the same CLI flags as the other providers but is not included in the default system tests (no free tier).
 
 ```env
 # .env
@@ -119,55 +119,29 @@ python -m mars.runtime.server.main --provider anthropic
 
 # Inside any CLI / TUI client
 /spawn anthropic                                                            # alias: /spawn claude
-/spawn anthropic claude-opus-4-7 --goal "Investigate flaky test" --behaviour proactive
+/spawn anthropic claude-opus-4-7
 ```
 
 Notes:
 
 - The provider registers under `anthropic` with alias `claude` — both work.
 - Extended-thinking models (`claude-opus-4-7`) automatically request adaptive
-  thinking. For others you can opt in by passing `effort="low|medium|high"` to
-  `AnthropicProvider` directly from Python.
+  thinking.
 - Prompt caching can be enabled per-agent via `cache_prompts=True`.
 
 ### GitHub Copilot — free with a Copilot subscription
 
 GitHub Copilot Chat API is available to anyone with a **GitHub Copilot Individual, Business, or Enterprise** subscription. There is no per-token cost beyond the subscription.
 
-**Authentication — `gh auth login` (recommended)**
-
-Copilot requires a GitHub **OAuth token**, not a Personal Access Token (PAT).
-The easiest way to get one is the GitHub CLI:
+**Setup — one step:**
 
 ```bash
-# Install the GitHub CLI
-# Windows (winget)
-winget install GitHub.cli
-
-# macOS
-brew install gh
-
-# Linux
-# see https://github.com/cli/cli#installation
-
-# Then log in once:
 gh auth login
 ```
 
-Follow the prompts (browser or device code). After that, MARS calls `gh auth token` automatically — no `.env` entry needed.
+Follow the browser prompts. MARS calls `gh auth token` at startup to get the OAuth token automatically. That's it.
 
-**Alternative: pass the token explicitly**
-
-If you have a GitHub OAuth token (`gho_…`) from another source, pass it directly:
-
-```env
-# Not needed if gh auth login was used — MARS auto-discovers the token.
-# Only set this if you want to override the gh CLI token.
-# GITHUB_TOKEN=gho_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-> ⚠️ **Personal Access Tokens (`ghp_…`) do not work** for Copilot.
-> Use `gh auth login` instead.
+> Install `gh` if needed: `winget install GitHub.cli` (Windows) · `brew install gh` (macOS) · [cli.github.com](https://cli.github.com) (Linux)
 
 **Start MARS with Copilot**
 
@@ -322,19 +296,42 @@ Press `Ctrl-D` or type `/quit` to quit.
 
 ## 7. First real conversation
 
+**With Ollama (free, local):**
+
 ```bash
 python -m mars.client.cli.main --provider ollama
-# or
-python -m mars.client.cli.main --provider anthropic
 ```
 
-When the CLI is up, type any prompt at the input bar to chat with the default agent. Useful commands:
+**With GitHub Copilot (subscription required, `gh auth login` once):**
+
+```bash
+python -m mars.client.cli.main --provider copilot
+```
+
+**Two providers at once — Ollama + Copilot:**
+
+```bash
+# Terminal 1: headless server
+python -m mars.runtime.server.main
+
+# Terminal 2: connect and spawn both
+python -m mars.client.cli.main --remote localhost:7432
+```
+
+Inside the CLI:
+
+```
+/spawn ollama               # spawn a local Ollama agent
+/spawn copilot gpt-4o-mini  # spawn a Copilot agent
+/agents                     # list both agents
+/switch <agent-id>          # direct messages to that agent
+```
+
+When the CLI is up, type any prompt at the input bar. Useful commands:
 
 ```
 /agents available    list all service agents in the registry
 /spawn <provider>    spawn an additional LLM agent
-/scope list          list domain scopes
-/scope show <id>     display a scope document
 /help                full command list
 ```
 
@@ -351,8 +348,7 @@ For multi-client setups, persistent agents, or sharing a single set of API keys 
 python -m mars.runtime.server.main                            # uses defaults (no initial LLM agent)
 python -m mars.runtime.server.main --provider ollama          # local Ollama (llama3.2, no API key)
 python -m mars.runtime.server.main --provider ollama --model qwen2.5:7b  # different Ollama model
-python -m mars.runtime.server.main --provider anthropic       # Anthropic Claude
-python -m mars.runtime.server.main --password secret          # require a password from clients
+python -m mars.runtime.server.main --provider copilot         # GitHub Copilot (gh auth login once)
 ```
 
 > A `mars-server` console script is also installed by `pip install -e ".[dev]"` — use it instead if your Python `Scripts/` (Windows) / `bin/` (Linux/macOS) directory is on `PATH`. The `python -m …` form always works regardless of `PATH`.
@@ -370,6 +366,17 @@ All free service agents auto-spawn from `mars/runtime/agents/agents.ini` on star
 | `url` | url, fetch, http, web, get, post, download, … | — |
 | `ollama-models` | models, list-models, ollama-models, providers, tags | — |
 | `launcher` | spawn_agent, launch, create_agent | — |
+| `git` | git, diff, status, log, add, commit, branch, blame | gitpython (bundled) |
+| `memory` | remember, recall, forget, memory_list, store_fact | — |
+| `session` | save_session, load_session, list_sessions, session | — |
+
+On-demand agents (not auto-spawned; use `/spawn <name>` to activate):
+
+| Agent | Skills | Notes |
+|-------|--------|-------|
+| `shell` | shell, run, exec, bash, terminal | Runs with server privileges — activate only when needed |
+| `scheduler` | schedule_after, schedule_every, after, every | Records schedules; auto-dispatch not yet wired |
+| `github` | search_repositories, create_issue, list_pull_requests, … | Requires `GITHUB_PERSONAL_ACCESS_TOKEN` + binary |
 
 Ports the server exposes:
 
@@ -386,7 +393,6 @@ Ports the server exposes:
 python -m mars.client.cli.main --remote                         # defaults to localhost:7432
 python -m mars.client.cli.main --remote localhost:7432          # explicit host:port
 python -m mars.client.cli.main --remote 192.168.1.10:7432       # remote server
-python -m mars.client.cli.main --remote localhost --password secret
 ```
 
 > The equivalent console-script form is `mars --remote …` (also installed by `pip install -e ".[dev]"`).
@@ -399,7 +405,7 @@ Once connected, every `/spawn`, `/scope`, and `/message` runs on the server; mul
 
 - **`/spawn github` fails with `No such file or directory`** — the `bin/github-mcp-server.exe` (Windows) or `bin/github-mcp-server` (Linux/macOS) binary is missing. Download it from [github-mcp-server releases](https://github.com/github/github-mcp-server/releases/latest) and place it in the `bin/` folder at the project root. See SETUP.md §5 for the exact steps.
 - **`/spawn github` fails with `GITHUB_PERSONAL_ACCESS_TOKEN not set`** — add `GITHUB_PERSONAL_ACCESS_TOKEN=<token>` to `.env`. Use `gh auth token` to get the value.
-- **`Copilot: no token found`** — no usable GitHub OAuth token was found. Run `gh auth login` (once) and ensure `gh` is on PATH. MARS picks up the token automatically via `gh auth token`.
+- **`Copilot: no token found`** — no usable GitHub OAuth token was found. Run `gh auth login` (once). MARS reads the token directly from the gh CLI config file (`~/.config/gh/hosts.yml` on Linux/macOS, `%APPDATA%\GitHub CLI\hosts.yml` on Windows) — the `gh` CLI does not need to be on PATH after initial login. Alternatively, set `GITHUB_TOKEN=gho_…` in `.env`.
 - **Personal Access Tokens (`ghp_…`) do not work** for Copilot — use `gh auth login` to get an OAuth (`gho_…`) token.
 - **`ModuleNotFoundError: No module named 'openai'`** — MARS only needs `httpx` (already a core dependency) — no extra provider SDKs required. Reinstall with `pip install -e ".[dev]"` if your environment is incomplete.
 - **`ModuleNotFoundError: No module named 'sympy'`** or **`No module named 'scipy'`** — reinstall with `pip install -e ".[dev]"` to get all dependencies.

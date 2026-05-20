@@ -23,7 +23,7 @@ import operator
 import re
 from typing import Any
 
-from mars.client.providers.base import LLMMessage, LLMProvider, LLMResponse, ToolSpec
+from mars.client.providers.base import LLMMessage, LLMProvider, LLMResponse, ModelInfo, ToolSpec
 
 # ---------------------------------------------------------------------------
 # Simple expression evaluator (safe subset: +  -  *  /  //  %  **  unary -)
@@ -194,7 +194,6 @@ class MockProvider(LLMProvider):
         )
 
     async def list_models(self) -> list[Any]:
-        from mars.client.providers.base import ModelInfo
         return [
             ModelInfo(
                 id="mock-1.0",
@@ -297,5 +296,4 @@ class ToolCallMockProvider(LLMProvider):
         return LLMResponse(content=reply, tool_calls=[], finish_reason="stop")
 
     async def list_models(self) -> list[Any]:
-        from mars.client.providers.base import ModelInfo
         return [ModelInfo(id="mock-tool-1.0", name="Mock Tool Provider", is_free=True)]

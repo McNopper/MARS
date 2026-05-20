@@ -18,7 +18,7 @@ is a thin TCP client.
 python -m mars.client.cli.main                                   # interactive; pick provider with /spawn
 python -m mars.client.cli.main --provider mock                   # offline test agent, no key needed
 python -m mars.client.cli.main --provider ollama                 # local Ollama — no API key, no limits 🦙
-python -m mars.client.cli.main --provider copilot                # GitHub Copilot (needs gh auth login)
+python -m mars.client.cli.main --provider copilot                # GitHub Copilot (needs gh auth login or GITHUB_TOKEN)
 python -m mars.client.cli.main --provider anthropic --model claude-sonnet-4-6  # Anthropic Claude (needs ANTHROPIC_API_KEY / ANTHROPIC_KEY, or --key)
 ```
 
@@ -36,7 +36,6 @@ python -m mars.runtime.server.main --provider ollama          # + local llama3.2
 python -m mars.client.cli.main --remote                         # defaults to localhost:7432
 python -m mars.client.cli.main --remote localhost:7432          # explicit host:port
 python -m mars.client.cli.main --remote 192.168.1.10:7432       # remote server
-python -m mars.client.cli.main --remote localhost --password secret
 ```
 
 The CLI opens with three panels: the **agent list**, the **conversation log**, and the **capability board** (service agents and their skills).
@@ -173,7 +172,139 @@ The prompt shows `[#roomname GROUP]>` when you are inside a room.
 
 ---
 
-## Talking to an agent
+## THINKING indicator
+
+When an agent is processing a request, its sidebar tile shows an animated braille spinner (`⠋⠙⠹⠸…`) in blue. The spinner is driven by the system clock so it stays smooth at any refresh rate. When the reply is ready, the spinner is replaced by `✋ reply ready`.
+
+---
+
+## Message shortcuts
+
+### `@file` — inline file context
+
+Prefix a path with `@` anywhere in your message to expand the file's contents inline before sending:
+
+```text
+> Explain this function: @src/utils.py
+> Review these changes: @diff.txt and tell me if they are safe
+```
+
+Multiple `@path` tokens in one message are all expanded. MARS warns and skips any path that cannot be read.
+
+### `!cmd` — local shell shortcut
+
+A message that starts with `!` runs the command locally in a subprocess and shows the output in the reply panel:
+
+```text
+!pytest tests/ -x -q
+!git diff --staged
+!ls -la
+```
+
+stdout and stderr are captured and displayed. The command runs with a 30-second timeout.
+
+---
+
+## Workspace commands
+
+### `/new` — clear conversation
+
+```text
+/new
+```
+
+Clears the local conversation history display for the current agent. The agent's server-side state is not affected.
+
+### `/compact` — summarise and compress
+
+```text
+/compact
+```
+
+Asks the current agent to summarise the entire conversation into a short paragraph, then replaces the displayed history with that summary. Useful when context is getting long.
+
+### `/rewind` — undo last message pair
+
+```text
+/rewind
+```
+
+Removes the last user message and agent reply from the displayed history. Does not affect the agent's server-side memory.
+
+### `/context` — token usage estimate
+
+```text
+/context
+```
+
+Prints a rough estimate of the current context window usage (characters ÷ 4 ≈ tokens).
+
+### `/copy` — copy last reply to clipboard
+
+```text
+/copy
+```
+
+Copies the most recent agent reply to the system clipboard using `pyperclip` (install with `pip install "mars[clipboard]"`). Falls back to writing to a temporary file if pyperclip is not installed.
+
+### `/share` — export conversation
+
+```text
+/share                   # save to ./mars-chat-YYYYMMDD-HHMMSS.md
+/share ./review.md       # save to a specific path
+```
+
+Exports the full conversation log for the current agent to a Markdown file.
+
+### `/search` — search history
+
+```text
+/search <query>
+```
+
+Filters the activity feed to show only messages that contain `<query>`.
+
+### `/ask` — ephemeral side question
+
+```text
+/ask What does RFC 9110 say about ETags?
+```
+
+Sends a one-off question to the current agent. The exchange is flagged as ephemeral — it is sent and displayed but does not permanently modify your main conversation thread.
+
+### `/plan` — request an implementation plan
+
+```text
+/plan Add pagination support to the user list endpoint
+```
+
+Sends the task description to the current agent with an instruction to think step-by-step and produce an implementation plan before writing any code.
+
+### `/instructions` — load project rules
+
+```text
+/instructions
+```
+
+Looks for a project instructions file in the current directory (searches for `AGENTS.md`, `CLAUDE.md`, `copilot-instructions.md`, `.github/copilot-instructions.md` in order). If found, the file's contents are sent to the current agent as a system-level instruction that applies to all subsequent replies.
+
+### `/theme` — switch colour theme
+
+```text
+/theme             # list available themes
+/theme dark        # switch to dark theme
+/theme light       # switch to light theme
+```
+
+### `/version` — show MARS version
+
+```text
+/version
+```
+
+---
+
+
 
 Anything that does **not** start with `/` is sent as a message to the **current room** (shown in the prompt). All members of the room — agents and humans — receive the message.
 
@@ -187,7 +318,6 @@ State and strategy:
 
 ```text
 /status               # show FSM state of current agent
-/skills M1T1 ocr nlp  # set skills on agent M1T1
 ```
 
 ### Chat renderer (`/echo`)
@@ -204,51 +334,6 @@ Incoming agent replies are rendered through whichever echo mode is active:
 The matching service agents `echo-text`, `echo-md`, and `echo-void` are
 auto-spawned on server start; `/echo` only flips the client-side renderer
 and never sends a message.
-
----
-
-## Shared scopes
-
-A **scope** is a markdown problem document that agents collaborate on. The scope agent watches the `scopes/` folder tree and serves its contents over the platform bus.
-
-```text
-/scope list                  # list all domain scopes
-/scope show T1               # display the trading scope document
-/scope show hyperjump/SP1    # display a sub-scope
-```
-
-All assigned agents receive the same markdown document and see each other's replies. The server **auto-assigns** service agents whose skills match the scope document.
-
----
-
-## Models & Ollama management
-
-List models for any provider, pull Ollama models, and inspect what is currently loaded:
-
-```text
-/models ollama                   # list locally installed Ollama models
-/models pull llama3.3            # pull a new model from the Ollama registry
-/models pull qwen2.5:7b          # pull a specific tag
-/models ps                       # show Ollama models currently in memory
-/models ps http://192.168.1.10:11434   # remote Ollama server
-```
-
-Use `/providers` to see every registered backend. Each provider exposes its own model catalogue — Ollama queries the live local registry; cloud providers return a curated list.
-
----
-
-## Artifacts
-
-Files exchanged with agents are **artifacts** — text, JSON, images, zips.
-
-```text
-/attach ./report.pdf             # upload a file as an artifact
-/artifact list                   # list all artifacts
-/artifact get A3 ./out.pdf       # download an artifact to a path
-/artifact send M1T1 A3           # send an artifact to an agent
-```
-
-Service agents (profiler, math, file, …) return their results as artifacts that appear on the capability board.
 
 ---
 
@@ -289,8 +374,8 @@ See [SETUP.md](SETUP.md) for the full Ollama install guide.
 |---------|-------------|
 | `/spawn <provider> [model]` | Spawn a new LLM agent (auto-creates `#agent_id` and adds the agent to it) |
 | `/spawn … --role <r> --goal <g>` | Assign CrewAI-style role + goal (prepended to system prompt) |
-| `/spawn … --behaviour reactive|proactive` | Choose the runtime mode; badges show `⚡` or `⏰` in the UI |
-| `/stop [agent_id]` | Stop an agent (defaults to current) |
+| `/spawn … --behaviour reactive\|proactive` | Choose the runtime mode; badges show `⚡` or `⏰` in the UI |
+| `/stop <agent_id>` | Stop and despawn an agent |
 | `/agents` / `/agents available` | List active / spawnnable agents |
 | `/switch <agent_id\|#room>` | Change current room |
 | `/list` | List all active rooms and members |
@@ -299,19 +384,20 @@ See [SETUP.md](SETUP.md) for the full Ollama install guide.
 | `/read [agent_id]` | Read pending reply |
 | `/verbose [agent_id]` | Toggle auto-print |
 | `/status [agent_id]` | Show FSM state + strategy |
-| `/skills [agent] [skills…]` | Show or set skills |
 | `/echo <text\|md\|void>` | Select chat renderer (plain / markdown / discard) |
-| `/scope list` | List domain scope documents |
-| `/scope show <id>` | Display a scope document |
-| `/models <provider>` | List models for a provider |
-| `/models pull <model>` | Pull an Ollama model |
-| `/models ps` | Show Ollama models in memory |
-| `/attach <path>` | Upload a file as artifact |
-| `/artifact list` | List all artifacts |
-| `/artifact get <id> [path]` | Download an artifact |
-| `/artifact send <agent> <id>` | Send an artifact to an agent |
-| `/providers` | List LLM providers |
+| `/new` | Clear conversation history display |
+| `/compact` | Summarise and compress conversation |
+| `/rewind` | Undo last user+agent message pair |
+| `/ask <question>` | Ephemeral side question (not saved to history) |
+| `/plan <task>` | Request an implementation plan |
+| `/context` | Show token usage estimate for current context |
+| `/copy` | Copy last reply to clipboard |
+| `/share [path]` | Export conversation to a Markdown file |
+| `/search <query>` | Search conversation history |
+| `/instructions` | Load project instructions (AGENTS.md / CLAUDE.md / …) |
+| `/theme [name]` | Switch colour theme |
+| `/version` | Show installed MARS version |
 | `/help` | Full help text |
 | `/quit` or Ctrl-D | Quit |
-
-Anything else you type is sent as a message to the current agent.
+| `@path` in message | Expand file contents inline before sending |
+| `!cmd` as message | Run a local shell command; show output in the reply panel |

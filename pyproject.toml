@@ -18,6 +18,7 @@ dependencies = [
     "scipy>=1.12",
     "numpy>=1.26",
     "anthropic>=0.25",
+    "gitpython>=3.1",
 ]
 
 [project.scripts]
@@ -34,6 +35,12 @@ mars-agent-url = "mars.runtime.agents.url_agent:main"
 mars-agent-ollama = "mars.runtime.agents.ollama_agent:main"
 mars-agent-launcher = "mars.runtime.agents.launcher_agent:main"
 
+mars-agent-shell = "mars.runtime.agents.shell_agent:main"
+mars-agent-git = "mars.runtime.agents.git_agent:main"
+mars-agent-memory = "mars.runtime.agents.memory_agent:main"
+mars-agent-session = "mars.runtime.agents.session_agent:main"
+mars-agent-scheduler = "mars.runtime.agents.scheduler_agent:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
@@ -42,6 +49,7 @@ dev = [
 all = [
     "mars[dev]",
 ]
+clipboard = ["pyperclip>=1.8"]
 
 [tool.setuptools.packages.find]
 include = ["mars*"]
@@ -67,4 +75,4 @@ markers = [
     "system: full-stack tests with real processes or external APIs (slow)",
     "llm: tests that make real LLM provider calls (excluded from default run)",
 ]
-addopts = "-x"
+addopts = "-x -m 'not llm'"

@@ -106,6 +106,8 @@ async def run_llm_agent(
     key: str | None = None,
     host: str | None = None,
     name: str | None = None,
+    mock_tool_name: str | None = None,
+    mock_tool_request: str | None = None,
 ) -> None:
     kwargs: dict[str, Any] = {}
     if model:
@@ -114,6 +116,11 @@ async def run_llm_agent(
         kwargs["api_key"] = key
     if host:
         kwargs["host"] = host
+    if provider in ("mock-tool",):
+        if mock_tool_name:
+            kwargs["tool_name"] = mock_tool_name
+        if mock_tool_request:
+            kwargs["tool_request"] = mock_tool_request
     llm = get_provider(provider, **kwargs)
 
     host_name, port = parse_server(server)
@@ -235,8 +242,10 @@ async def run_llm_agent(
         Running this as a task (not inline) keeps the main read loop alive
         so it can receive tool-result replies that resolve pending futures.
         """
+        await send_json(writer, {"t": "fsm", "fsm_state": "THINKING"})
         async with _locks[from_id]:
             reply_text = await _run_to_completion(from_id)
+        await send_json(writer, {"t": "fsm", "fsm_state": "IDLE"})
         await send_json(writer, {"t": "msg", "target": from_id, "text": reply_text})
 
     try:
@@ -321,6 +330,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--key", default=None)
     parser.add_argument("--host", default=None)
     parser.add_argument("--name", default=None)
+    parser.add_argument("--mock-tool-name", default=None, dest="mock_tool_name")
+    parser.add_argument("--mock-tool-request", default=None, dest="mock_tool_request")
     args = parser.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -337,6 +348,8 @@ def main(argv: list[str] | None = None) -> None:
             key=args.key,
             host=args.host,
             name=args.name,
+            mock_tool_name=args.mock_tool_name,
+            mock_tool_request=args.mock_tool_request,
         )
     )
 

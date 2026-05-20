@@ -1,8 +1,10 @@
-"""Unit tests for the three UI bugs fixed:
+"""Unit tests for TUI rendering behaviour.
 
-1. Feed messages were added at the top (appendleft) — now append (newest at bottom).
-2. Chat messages were clipped on width — main column now uses overflow="fold".
-3. Human agent was missing from the sidebar agent list.
+Tests cover three key rendering properties:
+
+1. Feed order — newest item is at the bottom, not the top.
+2. Width overflow — the main feed column uses overflow="fold" so long lines wrap.
+3. Human agent visibility — the local human is rendered in the sidebar.
 """
 from __future__ import annotations
 

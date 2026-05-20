@@ -29,6 +29,11 @@ _BUILTIN_COMMAND_MODULES: dict[str, str] = {
     "mars-agent-url": "mars.runtime.agents.url_agent",
     "mars-agent-ollama": "mars.runtime.agents.ollama_agent",
     "mars-agent-launcher": "mars.runtime.agents.launcher_agent",
+    "mars-agent-shell": "mars.runtime.agents.shell_agent",
+    "mars-agent-git": "mars.runtime.agents.git_agent",
+    "mars-agent-memory": "mars.runtime.agents.memory_agent",
+    "mars-agent-session": "mars.runtime.agents.session_agent",
+    "mars-agent-scheduler": "mars.runtime.agents.scheduler_agent",
 }
 
 

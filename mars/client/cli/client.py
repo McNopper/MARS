@@ -14,6 +14,22 @@ from mars.client.cli.models import (
 )
 from mars.client.cli.renderer import MARSRenderer
 from mars.client.cli.utils import _normalize_agent_type, _normalize_echo_mode, _running_service_agent_names
+from mars.client.cli.commands import (
+    _expand_file_mentions,
+    _handle_bang_cmd,
+    _cmd_copy,
+    _cmd_new,
+    _cmd_context,
+    _cmd_instructions,
+    _cmd_compact,
+    _cmd_share,
+    _cmd_rewind,
+    _cmd_search,
+    _cmd_ask,
+    _cmd_plan,
+    _cmd_version,
+    _cmd_theme,
+)
 
 try:
     from rich.console import Console, Group
@@ -31,10 +47,12 @@ class MARSClientTerminal:
     Forwards commands to the server; handles a small set of purely local commands.
     """
 
-    # Commands handled locally (no server round-trip needed)
+    # Commands handled entirely on the client (no server round-trip needed)
     _LOCAL = frozenset({
-        "switch", "avatar", "verbose", "read", "agents", "state", "help",
-        "quit",
+        "switch", "avatar", "verbose", "read", "agents", "status", "echo",
+        "help", "quit",
+        "new", "rewind", "context", "share", "search", "version", "theme",
+        "copy", "compact", "instructions", "ask", "plan",
     })
 
     def __init__(
@@ -220,15 +238,8 @@ class MARSClientTerminal:
                     content=_content,
                     direction=_direction,
                 ))
-                rec.has_reply = True
-                rec.pending_reply = str(_content)
-
         elif t == "reply":
-            aid = ev.get("agent_id", "")
-            rec = self._state.agents.get(aid)
-            if rec and ev.get("has_reply"):
-                rec.has_reply     = True
-                rec.pending_reply = ev.get("content", "")
+            pass  # kept for forward-compatibility; no-op
 
         elif t == "fsm":
             aid = ev.get("agent_id", "")
@@ -295,7 +306,7 @@ class MARSClientTerminal:
                         rec.skills = list(ev.get("skills", rec.skills))
                 else:
                     self._state.agents.pop(name, None)
-            icon = "🔌" if t == "client_connect" else "🔌"
+            icon = "🔌" if t == "client_connect" else "⛔"
             verb = "connected" if t == "client_connect" else "disconnected"
             peer = f"{name} @ {ev.get('addr', '?')}" if name else ev.get("addr", "?")
             self._state.feed.append(FeedItem(
@@ -346,8 +357,7 @@ class MARSClientTerminal:
             ))
             rec = self._state.agents.get(sender)
             if rec is not None:
-                rec.has_reply = True
-                rec.pending_reply = content
+                pass  # has_reply removed; reply always visible in chat
 
         elif t == "switch":
             new_agent = ev.get("current_agent")
@@ -408,11 +418,6 @@ class MARSClientTerminal:
 
         if cmd == "quit":
             return True
-        elif cmd == "help":
-            self._state.status_line = (
-                "Local: /switch /avatar /verbose /read /agents [available] /status /help /quit  "
-                "— all other commands forwarded to the server"
-            )
         elif cmd == "agents":
             if args and args[0] == "available":
                 self._cmd_agents_available()
@@ -494,22 +499,42 @@ class MARSClientTerminal:
                     self._state.status_line = f"Unknown echo mode '{args[0]}'. Use text | md | void."
                 else:
                     self._state.echo_mode = mode
-                    self._state.status_line = f"echo mode → {mode}"
-        elif cmd == "read":
-            aid = args[0] if args else self._state.current_agent
-            if not aid:
-                self._state.status_line = "Usage: /read <agent_id>"
-            else:
-                rec = self._state.agents.get(aid)
-                if rec and rec.has_reply:
-                    self._state.reply_agent   = aid
-                    self._state.reply_content = rec.pending_reply
-                    rec.has_reply     = False
-                    rec.pending_reply = ""
-                else:
-                    self._state.status_line = f"No pending reply from '{aid}'."
+                    self._state.status_line = f"echo mode -> {mode}"
+        elif cmd == "new":
+            _cmd_new(self._state)
+        elif cmd == "rewind":
+            _cmd_rewind(self._state)
+        elif cmd == "context":
+            _cmd_context(self._state)
+        elif cmd == "version":
+            _cmd_version(self._state)
+        elif cmd == "theme":
+            _cmd_theme(self._state, " ".join(args))
+        elif cmd == "share":
+            _cmd_share(self._state, " ".join(args))
+        elif cmd == "search":
+            _cmd_search(self._state, " ".join(args))
+        elif cmd == "copy":
+            _cmd_copy(self._state, self._writer)
+        elif cmd == "compact":
+            _cmd_compact(self._state, self._writer)
+        elif cmd == "instructions":
+            _cmd_instructions(self._state, self._writer)
+        elif cmd == "ask":
+            _cmd_ask(self._state, self._writer, " ".join(args))
+        elif cmd == "plan":
+            _cmd_plan(self._state, self._writer, " ".join(args))
+        elif cmd == "help":
+            self._state.status_line = (
+                "Agents: /spawn /stop /agents /switch /status /verbose /avatar  "
+                "Rooms: /join /part /list  "
+                "Conversation: /new /compact /rewind /ask /plan /read  "
+                "Workspace: @file !cmd /copy /context /instructions /share /search  "
+                "Rendering: /echo /theme  "
+                "Other: /version /help /quit"
+            )
         else:
-            # Forward anything unknown to the server
+            # Forward anything unknown to the server (/spawn, /stop, /join, /part, /list, …)
             self._send({"t": "cmd", "text": line})
         return False
 
@@ -711,6 +736,8 @@ class MARSClientTerminal:
                         should_exit = await self._handle_command(line)
                         if should_exit:
                             break
+                    elif line.startswith("!"):
+                        _handle_bang_cmd(line, state=self._state)
                     else:
                         target = self._state.current_agent
                         if not target:
@@ -719,6 +746,7 @@ class MARSClientTerminal:
                             )
                         elif target.startswith("#"):
                             # Room message — append to room chat and broadcast
+                            expanded = _expand_file_mentions(line)
                             room_name = target[1:]
                             if room_name not in self._state.rooms_chat:
                                 self._state.rooms_chat[room_name] = []
@@ -727,18 +755,17 @@ class MARSClientTerminal:
                                 content=line, direction="out",
                             ))
                             self._state.chat_scroll = 0
-                            self._send({"t": "msg", "target": target, "text": line})
+                            self._send({"t": "msg", "target": target, "text": expanded})
                         else:
+                            expanded = _expand_file_mentions(line)
                             rec = self._state.agents.get(target)
                             if rec:
-                                rec.has_reply     = False
-                                rec.pending_reply = ""
                                 rec.chat.append(ChatMessage(
                                     ts=datetime.now(), sender=self._state.my_agent_id,
                                     content=line, direction="out",
                                 ))
                             self._state.chat_scroll = 0
-                            self._send({"t": "msg", "target": target, "text": line})
+                            self._send({"t": "msg", "target": target, "text": expanded})
         finally:
             event_task.cancel()
             try:
@@ -765,9 +792,12 @@ class MARSClientTerminal:
                     should_exit = await self._handle_command(line)
                     if should_exit:
                         break
+                elif line.startswith("!"):
+                    _handle_bang_cmd(line)
                 else:
                     target = self._state.current_agent
                     if target:
+                        expanded = _expand_file_mentions(line)
                         if target.startswith("#"):
                             room_name = target[1:]
                             if room_name not in self._state.rooms_chat:
@@ -776,7 +806,7 @@ class MARSClientTerminal:
                                 ts=datetime.now(), sender=self._state.my_agent_id,
                                 content=line, direction="out",
                             ))
-                        self._send({"t": "msg", "target": target, "text": line})
+                        self._send({"t": "msg", "target": target, "text": expanded})
                     await asyncio.sleep(3.0)
         finally:
             event_task.cancel()

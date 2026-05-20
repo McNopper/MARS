@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections import deque
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -30,6 +31,9 @@ class MARSRenderer:
 
     # Panel widths — change here to resize both side panels at once.
     SIDE_PANEL_WIDTH: int = 36
+
+    # Braille spinner frames cycled when an agent is THINKING.
+    _THINKING_SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
     # -- Sidebar (Slack-style agent list) ------------------------------------
 
@@ -65,15 +69,17 @@ class MARSRenderer:
             s.sidebar_visible_height = max(1, height - 2)
         # clamp cursor to conversational range
         s.sidebar_cursor = max(0, min(s.sidebar_cursor, max(0, nav_total - 1)))
+        # one spinner frame for all THINKING agents in this render pass
+        _spin = self._THINKING_SPINNER[int(time.monotonic() * 8) % len(self._THINKING_SPINNER)]
         def _render_row(idx: int, aid: str, rec: "AgentRecord", *, dim: bool = False) -> None:
             is_cursor = (idx == s.sidebar_cursor) and not dim
             is_error = rec.fsm_state in ("ERROR", "CRASHED", "FAILED", "BLOCKED")
             is_self = (aid == s.my_agent_id)
             emoji = "⚠️" if is_error else s.emoji(aid)
+            is_thinking = rec.fsm_state == "THINKING"
             dot_color = (
                 "red"    if is_error
-                else "blue"   if rec.fsm_state == "THINKING"
-                else "yellow" if rec.has_reply
+                else "blue"   if is_thinking
                 else "green"  if rec.fsm_state in ("IDLE", "WAITING", "—", "")
                 else "grey50"
             )
@@ -82,18 +88,16 @@ class MARSRenderer:
                 text.append("►", style="bold cyan")
             else:
                 text.append(" ")
-            text.append("●", style="grey50" if dim else dot_color)
+            if is_thinking:
+                text.append(_spin, style="bold blue")
+            else:
+                text.append("●", style=dot_color)
             text.append(f" {emoji} ")
             text.append(aid, style=label_style)
             if not dim:
                 if rec.model:
                     short_model = rec.model.split("/")[-1][:14]
                     text.append(f"  {short_model}", style="dim")
-                behaviour = s.agent_behaviours.get(aid, "")
-                if behaviour == "proactive":
-                    text.append("  ⏰", style="dim cyan")
-                elif behaviour == "reactive":
-                    text.append("  ⚡", style="dim yellow")
             text.append("\n")
 
         for idx, (aid, rec) in enumerate(conv_agents):
@@ -119,7 +123,7 @@ class MARSRenderer:
         subtitle += "[/dim]"
         if scroll > 0:
             subtitle += f" [dim]↓{scroll}[/dim]"
-        border_style = "yellow" if s.panel_focus == "sidebar" else "cyan"
+        border_style = "green" if s.panel_focus == "sidebar" else "blue"
         return Panel(
             text,
             title="[bold cyan]🤖 Agents[/bold cyan]",
@@ -232,7 +236,7 @@ class MARSRenderer:
 
     def render_feed(self, height: int | None = None) -> Panel:
         s = self._s
-        border_style = "yellow" if s.panel_focus == "chat" else "blue"
+        border_style = "green" if s.panel_focus == "chat" else "blue"
 
         # --- Room chat view (the only chat mode) ---
         if s.current_agent and s.current_agent.startswith("#"):
@@ -350,16 +354,15 @@ class MARSRenderer:
         return Panel(
             content,
             title=f"[bold cyan]✋  {agent_id}[/bold cyan]",
-            border_style="cyan",
+            border_style="blue",
             padding=(0, 2),
         )
-
-    # -- Rooms + Communications panel -----------------------------------------
 
     def render_connections(self, height: int | None = None) -> Panel:
         """Right panel: group rooms and their members."""
         s = self._s
         text = Text()
+        _spin = self._THINKING_SPINNER[int(time.monotonic() * 8) % len(self._THINKING_SPINNER)]
 
         # ── Group rooms section ──────────────────────────────────────────────
         rooms = s.rooms  # room_name → set[agent_id]
@@ -367,28 +370,33 @@ class MARSRenderer:
             text.append(" ─ rooms ─\n", style="bold cyan")
             for room_name, members in sorted(rooms.items()):
                 is_active = s.current_agent == f"#{room_name}"
+                arrow = "►" if is_active else " "
                 room_style = "bold yellow" if is_active else "bold white"
-                text.append(f" 💬 #{room_name}\n", style=room_style)
+                text.append(f"{arrow} 💬 #{room_name}\n", style=room_style)
                 for mid in sorted(members):
                     mem_em = s.emoji(mid)
                     role_tag = f" [{s.agent_roles[mid]}]" if mid in s.agent_roles else ""
-                    beh = s.agent_behaviours.get(mid, "")
-                    beh_tag = "  ⏰" if beh == "proactive" else ("  ⚡" if beh == "reactive" else "")
-                    text.append(f"   {mem_em} {mid}{role_tag}{beh_tag}\n", style="dim")
-                # last activity
-                rchat = s.rooms_chat.get(room_name)
-                if rchat:
-                    last = list(rchat)[-1]
-                    ago = _time_ago(last.ts)
-                    snippet = last.content[:24].replace("\n", " ")
-                    text.append(f"   ✉ {ago}  ", style="cyan")
-                    text.append(f'"{snippet}"\n', style="dim")
+                    mem_rec = s.agents.get(mid)
+                    if mem_rec:
+                        is_err = mem_rec.fsm_state in ("ERROR", "CRASHED", "FAILED", "BLOCKED")
+                        is_thinking = mem_rec.fsm_state == "THINKING"
+                        if is_err:
+                            dot = ("●", "red")
+                        elif is_thinking:
+                            dot = (_spin, "bold blue")
+                        else:
+                            dot = ("●", "green")
+                    else:
+                        dot = ("●", "green")
+                    text.append(f"   ", style="dim")
+                    text.append(dot[0], style=dot[1])
+                    text.append(f" {mem_em} {mid}{role_tag}\n", style="dim")
                 text.append("\n")
 
         if not rooms:
             text.append("  No rooms yet — use /spawn or /join to create one\n", style="dim")
 
-        border_style = "yellow" if s.panel_focus == "connections" else "green"
+        border_style = "green" if s.panel_focus == "connections" else "blue"
         return Panel(
             text,
             title="[bold green]💬 Rooms & Comms[/bold green]",
@@ -430,6 +438,6 @@ class MARSRenderer:
         prompt_text = Text()
         prompt_text.append(prompt, style="bold green")
         prompt_text.append(input_buf + "▌")
-        prompt_panel = Panel(prompt_text, border_style="dim", padding=(0, 1))
+        prompt_panel = Panel(prompt_text, border_style="green", padding=(0, 1))
 
         return Group(layout, prompt_panel)

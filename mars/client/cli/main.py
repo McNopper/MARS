@@ -25,8 +25,7 @@ Layout (live, redraws at ~8 Hz)
 Interaction model
 -----------------
   • Type freely — messages are sent fire-and-forget; you keep chatting.
-  • When an agent has a result its tile border turns yellow (reply ready).
-  • Use /read (or /switch to that agent) to acknowledge and see the reply.
+  • Replies appear directly in the chat panel; the dot turns green when the agent is idle again.
   • Multiple agents can be THINKING simultaneously.
 
 Agent type icons (sidebar & tiles)
@@ -39,53 +38,58 @@ Sidebar status dot  ●
 ----------------------
   🟢 green   IDLE — agent is ready to receive a message
   🔵 blue    THINKING — agent is actively processing (working)
-  🟡 yellow  REPLY READY — agent has a response waiting (/read to view)
   🔴 red     ERROR — agent crashed, failed, or is blocked
   ⚫ grey    Other state (spawning, despawning …)
 
 Tile border colours (full TUI mode)
 ------------------------------------
   green   Ready to receive (IDLE)    blue    Thinking (working)
-  yellow  Reply ready                red     Error / crashed
-  grey    Other state
+  red     Error / crashed            grey    Other state
 
 Commands
 --------
+Agents
   /spawn <provider> [model]   Spawn a new LLM agent (ollama, copilot, anthropic, mock, …)
-  /spawn screenshot           Spawn the screenshot service agent
-  /spawn <provider> [model]   Spawn an LLM agent
                               Options: --name NAME --role ROLE --goal GOAL
                                        --behaviour reactive|proactive
                                        --key KEY --host HOST
-  /spawn status               Spawn the status service agent
-  /stop [agent_id]            Stop an agent (defaults to current)
-  /read [agent_id]            Read pending reply (default: current agent)
-  /verbose [agent_id]         Toggle auto-print replies for an agent
-  /avatar [n|emoji]           Pick your human avatar (no args = show gallery)
+  /spawn <service>            Spawn a built-in service agent (profiler, status, shell, …)
+  /stop <agent_id>            Stop and despawn an agent
   /agents                     List active agents
-  /agents available           List all spawnable service agents from the registry
-  /switch <agent_id>          Switch current target
-  /echo <text|md|void>        Select the echo renderer for incoming replies
-                              (text = plain, md = markdown, void = discard)
+  /agents available           List all spawnable agents from the registry
+  /switch <agent_id>          Switch current target (also: sidebar ↑/↓ keys)
   /status [agent_id]          Show FSM state & strategy
-  /skills [agent] [skills…]   Show or set agent skills
-  /scope list                 List domain scope definitions
-  /scope show <id>            Show a domain scope document
-  /providers                  List available LLM providers
-  /models <provider>          List models for a provider
-  /models pull <model>        Pull an Ollama model from the registry
-  /models ps [host]           Show models currently loaded in Ollama memory
-  /attach <path>              Upload a file as an artifact
-  /artifact list              List platform artifacts
-  /artifact get <id>          Download / inspect an artifact
-  /artifact send <agent> <id> Send an artifact to an agent
-  /federation                 Show federation status
+  /verbose [agent_id]         Toggle auto-print replies for an agent
+  /avatar [n|emoji]           Pick your human avatar
+
+Rooms
   /join <room> [agents…]      Join (or create) a group room; optionally add agents
-  /part [room]               Leave a group room (defaults to current room)
-  /list                      List all active group rooms and their members
-  /permissions               List pending code execution permission requests
-  /approve [request_id]      Approve a pending code execution request
-  /deny [request_id]         Deny a pending code execution request
+  /part [room]                Leave a group room (defaults to current room)
+  /list                       List all active group rooms and their members
+
+Conversation
+  /new                        Clear local conversation history
+  /compact                    Summarise and compress conversation history
+  /rewind                     Remove last user + agent message pair
+  /ask <question>             Ephemeral side question (not stored in history)
+  /plan <task>                Ask agent for a step-by-step implementation plan
+  /read [agent_id]            Read pending reply (default: current agent)
+
+Workspace
+  @path                       Expand file contents inline before sending
+  !cmd                        Run a local shell command; show output in reply panel
+  /copy                       Copy last reply to clipboard
+  /context                    Show token usage estimate for current context
+  /instructions               Load AGENTS.md / CLAUDE.md / copilot-instructions.md
+  /share [filename]           Export conversation to a Markdown file
+  /search <query>             Search conversation history
+
+Rendering
+  /echo <text|md|void>        Select the echo renderer (text = plain, md = markdown, void = discard)
+  /theme [name]               Switch color theme (dark, light, dracula, solarized)
+
+Other
+  /version                    Show installed MARS version
   /help                       This help text
   /quit  or  Ctrl-D           Quit
 
@@ -316,3 +320,23 @@ __all__ = [
 
 if __name__ == "__main__":
     main()
+
+
+from mars.client.cli.commands import (  # noqa: E402 – placed after __all__
+    _expand_file_mentions,
+    _handle_bang_cmd,
+    _THEMES,
+    _cmd_copy,
+    _cmd_new,
+    _cmd_context,
+    _cmd_instructions,
+    _cmd_compact,
+    _cmd_share,
+    _cmd_rewind,
+    _cmd_search,
+    _cmd_ask,
+    _cmd_plan,
+    _cmd_version,
+    _cmd_theme,
+)
+

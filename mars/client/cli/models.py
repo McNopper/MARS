@@ -81,9 +81,9 @@ class AgentRecord:
     fsm_state: str = "—"
     fsm_strategy: str = "—"
     fsm_loop: str | None = None     # loop progress label when active
-    has_reply: bool = False         # agent raised hand — reply waiting
-    pending_reply: str = ""         # content of the pending reply
-    verbose: bool = False           # when True, reply shown immediately (no hand)
+    has_reply: bool = False         # reserved for wire protocol compatibility
+    pending_reply: str = ""         # reserved for wire protocol compatibility
+    verbose: bool = False
     avatar: str = ""                # custom avatar emoji (humans only)
     model: str = ""                 # model identifier (e.g. "gpt-4o", "llama-3.3-70b")
     vendor: str = ""                # provider/vendor name (e.g. "openai", "ollama")
@@ -260,4 +260,11 @@ def _sync_sidebar_cursor(state: "MARSState") -> None:
     if target in agent_ids:
         idx = agent_ids.index(target)
         state.sidebar_cursor = idx
-        state.sidebar_scroll = idx
+        # Scroll-follow: keep sidebar_scroll at 0 unless the cursor is outside the
+        # visible window.  Never jump scroll to the cursor unconditionally — that
+        # hides agents above the current one when first spawned.
+        win = max(1, state.sidebar_visible_height)
+        if idx < state.sidebar_scroll:
+            state.sidebar_scroll = idx
+        elif idx >= state.sidebar_scroll + win:
+            state.sidebar_scroll = idx - win + 1

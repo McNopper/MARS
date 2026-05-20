@@ -140,6 +140,138 @@ numerical root-finding, quadrature, optimisation, linear algebra, statistics, an
 
 ---
 
+## Development tool agents
+
+### 🐚 Shell execution agent
+
+Runs arbitrary shell commands and returns `stdout`, `stderr`, and `exit_code` as JSON.
+
+⚠️ **Security:** the agent runs with the same privileges as the MARS server. It is `cost = demand` — use `/spawn shell` to activate it only when needed.
+
+- **Skills:** `execute_shell`, `shell`, `run`, `exec`, `bash`, `command`, `terminal`
+- **Cost:** demand (`/spawn shell`)
+- **Spawn:** manual only
+- **Standalone:** `mars-agent-shell`
+
+**Accepted request formats:**
+
+| Request | Operation |
+|---------|-----------|
+| `ls -la` | Run shell command in CWD |
+| `pytest tests/ -x -q` | Run test suite |
+| JSON: `{"cmd":"ls","cwd":"/tmp","timeout":10,"env":{"X":"1"}}` | Full options |
+
+**Response fields:** `cmd`, `stdout`, `stderr`, `exit_code`, `ok`, `cwd`, `elapsed_s`, `error` (on OS error).
+Output is truncated to 64 KB per stream.
+
+---
+
+### 🌿 Git agent
+
+Git operations using **gitpython** — no `git` binary required on PATH beyond what gitpython needs.
+
+- **Skills:** `git_diff`, `git_status`, `git_log`, `git_add`, `git_commit`, `git_branch`, `git_blame`, `git`, `diff`, `vcs`
+- **Cost:** free
+- **Spawn:** auto-spawned on server start (MCP stdio)
+- **Standalone:** `mars-agent-git`
+
+**Accepted request formats:**
+
+| Request | Operation |
+|---------|-----------|
+| `status` | `git status` in CWD |
+| `diff` | `git diff` |
+| `diff --staged` | `git diff --staged` |
+| `log --oneline -10` | Recent commits |
+| `blame src/main.py` | Per-line blame |
+| `add .` | Stage all changes |
+| `commit "Fix bug"` | Commit with message |
+| `branch` | List branches |
+| JSON: `{"op":"diff","args":["--staged"]}` | Structured form |
+
+**Response fields:** `op`, `output`, `ok`, `error`.
+
+---
+
+### 🧠 Memory agent
+
+Cross-session key-value memory persisted in `~/.mars/memory.json`.
+LLM agents can remember facts across restarts and recall them in future sessions.
+
+- **Skills:** `remember`, `recall`, `forget`, `memory_list`, `memory`, `store_fact`, `retrieve_fact`
+- **Cost:** free
+- **Spawn:** auto-spawned on server start (MCP stdio)
+- **Standalone:** `mars-agent-memory`
+
+**Accepted request formats:**
+
+| Request | Operation |
+|---------|-----------|
+| `remember project: MARS multi-agent platform` | Store fact under key `project` |
+| `remember The user prefers dark mode` | Store fact with auto-generated key |
+| `recall project` | Retrieve value for key `project` |
+| `recall` | Return all stored facts |
+| `forget project` | Delete a key |
+| `forget all` | Clear all stored facts |
+| JSON: `{"op":"remember","key":"x","value":"y"}` | Structured form |
+
+**Response fields:** `op`, `key`, `value`, `ok`, `facts` (for `recall all`), `error`.
+
+---
+
+### 💾 Session agent
+
+Saves and restores MARS conversations in `~/.mars/sessions/`. Sessions persist across server restarts and can be named, renamed, and shared.
+
+- **Skills:** `save_session`, `load_session`, `list_sessions`, `rename_session`, `delete_session`, `session`
+- **Cost:** free
+- **Spawn:** auto-spawned on server start (MCP stdio)
+- **Standalone:** `mars-agent-session`
+
+**Accepted request formats:**
+
+| Request | Operation |
+|---------|-----------|
+| `save` | Save current session with a timestamp name |
+| `save my-feature-work` | Save with a custom name |
+| `list` | List all saved sessions |
+| `load my-feature-work` | Restore a session |
+| `rename my-feature-work refactor` | Rename a saved session |
+| `delete old-session` | Delete a saved session |
+| `info my-feature-work` | Show session metadata |
+| JSON: `{"op":"save","name":"work"}` | Structured form |
+
+**Response fields:** `op`, `name`, `ok`, `sessions` (for `list`), `metadata`, `error`.
+
+---
+
+### ⏰ Scheduler agent
+
+Records one-shot and recurring prompt schedules in `~/.mars/schedules.json`.
+Useful for timing reminders and to-do prompts.
+
+> **Note:** The agent records schedules and returns IDs. Automatic prompt dispatch (polling and sending the prompt when due) is planned but not yet implemented — clients must poll `/list` and send due prompts manually for now.
+
+- **Skills:** `schedule_after`, `schedule_every`, `cancel_schedule`, `list_schedules`, `scheduler`, `after`, `every`
+- **Cost:** demand (`/spawn scheduler`)
+- **Spawn:** manual only
+- **Standalone:** `mars-agent-scheduler`
+
+**Accepted request formats:**
+
+| Request | Operation |
+|---------|-----------|
+| `after 30s run the tests` | Schedule one-shot prompt in 30 seconds |
+| `after 5m check build status` | One-shot in 5 minutes |
+| `every 10m ping me` | Recurring every 10 minutes |
+| `cancel sched-abc12345` | Cancel a schedule by ID |
+| `list` | List all pending schedules |
+| JSON: `{"op":"after","delay":30,"prompt":"run tests"}` | Structured form |
+
+**Response fields:** `op`, `id`, `delay_s`, `interval_s`, `prompt`, `ok`, `schedules` (for `list`), `error`.
+
+---
+
 ## Data agents
 
 ### 📁 File I/O agent

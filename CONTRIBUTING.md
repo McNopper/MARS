@@ -214,7 +214,7 @@ Only use real providers in manually-run smoke tests; do not commit tests that re
 
 MARS is explicitly grounded in academic research. If your contribution introduces a new concept or algorithm, consider:
 
-- Citing the paper or textbook that defines it (add to `README.md` References).
+- Citing the paper or textbook that defines it (add to `README.md` § References).
 - Explaining the design choice in a module docstring (not just inline comments).
 - For significant new subsystems, a short note in the PR description explaining the theoretical background is welcome.
 

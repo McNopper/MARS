@@ -30,6 +30,45 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
+def _agent_payload(rec: AgentRecord, state: MARSState) -> dict[str, Any]:
+    """Build the canonical agent payload dict shared by TCP state-dump and REST API."""
+    return {
+        "agent_id": rec.agent_id,
+        "agent_type": rec.agent_type,
+        "domain": rec.domain,
+        "platform": rec.platform,
+        "server_addr": rec.server_addr,
+        "is_current": rec.is_current,
+        "status": rec.status,
+        "fsm_state": rec.fsm_state,
+        "fsm_strategy": rec.fsm_strategy,
+        "fsm_loop": rec.fsm_loop,
+        "has_reply": rec.has_reply,
+        "pending_reply": rec.pending_reply,
+        "verbose": rec.verbose,
+        "avatar": rec.avatar,
+        "model": rec.model,
+        "vendor": rec.vendor,
+        "competence_level": rec.competence_level,
+        "competence_score": rec.competence_score,
+        "skills": list(rec.skills),
+        "tool_schemas": list(rec.tool_schemas),
+        "role": state.agent_roles.get(rec.agent_id, ""),
+        "behaviour": state.agent_behaviours.get(rec.agent_id, ""),
+    }
+
+
+def _scope_payload(scope: Any) -> dict[str, Any]:
+    """Build the canonical scope payload dict."""
+    return {
+        "id": scope.id,
+        "title": scope.title,
+        "path": scope.path,
+        "parent_id": scope.parent_id,
+        "required_skills": list(getattr(scope, "required_skills", [])),
+    }
+
+
 @dataclass
 class ClientSession:
     reader: asyncio.StreamReader
@@ -135,40 +174,6 @@ class MARSServer:
         if not members:
             self._rooms.pop(room_name, None)
 
-    def _agent_payload(self, rec: AgentRecord) -> dict[str, Any]:
-        return {
-            "agent_type": rec.agent_type,
-            "domain": rec.domain,
-            "platform": rec.platform,
-            "server_addr": rec.server_addr,
-            "is_current": rec.is_current,
-            "status": rec.status,
-            "fsm_state": rec.fsm_state,
-            "fsm_strategy": rec.fsm_strategy,
-            "fsm_loop": rec.fsm_loop,
-            "has_reply": rec.has_reply,
-            "pending_reply": rec.pending_reply,
-            "verbose": rec.verbose,
-            "avatar": rec.avatar,
-            "model": rec.model,
-            "vendor": rec.vendor,
-            "competence_level": rec.competence_level,
-            "competence_score": rec.competence_score,
-            "skills": list(rec.skills),
-            "tool_schemas": list(rec.tool_schemas),
-            "role": self._state.agent_roles.get(rec.agent_id, ""),
-            "behaviour": self._state.agent_behaviours.get(rec.agent_id, ""),
-        }
-
-    def _scope_payload(self, scope: Any) -> dict[str, Any]:
-        return {
-            "id": scope.id,
-            "title": scope.title,
-            "path": scope.path,
-            "parent_id": scope.parent_id,
-            "required_skills": list(getattr(scope, "required_skills", [])),
-        }
-
     def _state_dump(self) -> dict[str, Any]:
         chats: dict[str, list[dict[str, Any]]] = {}
         for aid, rec in self._state.agents.items():
@@ -185,7 +190,7 @@ class MARSServer:
             "t": "state",
             "platform_name": self._state.platform_name,
             "current_agent": self._state.current_agent,
-            "agents": {aid: self._agent_payload(rec) for aid, rec in self._state.agents.items()},
+            "agents": {aid: _agent_payload(rec, self._state) for aid, rec in self._state.agents.items()},
             "feed": [
                 {
                     "ts": item.ts.isoformat(),
@@ -281,10 +286,10 @@ class MARSServer:
         for existing_id, existing_rec in self._state.agents.items():
             if existing_id == agent_id:
                 continue
-            self._send_to(session, {"t": "spawn", "agent_id": existing_id, **self._agent_payload(existing_rec)})
+            self._send_to(session, {"t": "spawn", "agent_id": existing_id, **_agent_payload(existing_rec, self._state)})
         self._send_to(session, {"t": "welcome", "your_id": agent_id})
 
-        self._state._fire({"t": "spawn", "agent_id": agent_id, **self._agent_payload(rec)})
+        self._state._fire({"t": "spawn", "agent_id": agent_id, **_agent_payload(rec, self._state)})
         self._clients.append(session)
         self._sessions_by_id[agent_id] = session
 
@@ -430,6 +435,31 @@ class MARSServer:
         if cmd == "/spawn":
             status = await self._spawn_from_tokens(args)
             self._send_to(session, {"t": "status", "text": status, "style": "bold cyan"})
+        elif cmd == "/stop":
+            target_id = args[0] if args else None
+            if not target_id:
+                self._send_to(session, {"t": "status", "text": "Usage: /stop <agent_id>", "style": "bold yellow"})
+                return
+            target_session = self._sessions_by_id.get(target_id)
+            if target_session:
+                await self._remove_session(target_session)
+                try:
+                    target_session.writer.close()
+                except Exception:
+                    pass
+                self._send_to(session, {"t": "status", "text": f"Stopped '{target_id}'", "style": "bold cyan"})
+            elif target_id in self._mcp_adapters:
+                adapter = self._mcp_adapters.pop(target_id)
+                try:
+                    await adapter.stop()
+                except Exception:
+                    pass
+                if target_id in self._state.agents:
+                    self._state.agents.pop(target_id, None)
+                    self._state._fire({"t": "despawn", "agent_id": target_id})
+                self._send_to(session, {"t": "status", "text": f"Stopped MCP agent '{target_id}'", "style": "bold cyan"})
+            else:
+                self._send_to(session, {"t": "status", "text": f"Agent '{target_id}' not found", "style": "bold yellow"})
         elif cmd == "/switch":
             session.current_agent = args[0] if args else None
             self._send_to(session, {"t": "switch", "current_agent": session.current_agent})
@@ -519,6 +549,11 @@ class MARSServer:
         # MCP service agents are not TCP sessions — route via MCPAdapter
         if target in self._mcp_adapters:
             mcp = self._mcp_adapters[target]
+            # Broadcast THINKING so clients show the blue spinner
+            rec = self._state.agents.get(target)
+            if rec is not None:
+                rec.fsm_state = "THINKING"
+            self._broadcast({"t": "fsm", "agent_id": target, "fsm_state": "THINKING"})
             try:
                 # Wire agents may send a JSON envelope for structured tool calls:
                 # {"__tool__": "tool_name", "__args__": {...}}
@@ -537,6 +572,11 @@ class MARSServer:
                     result = await mcp.call(text, tool_name=tool_name)
             except Exception as exc:
                 result = f"(MCP error: {exc})"
+            finally:
+                # Always restore IDLE so the dot goes green
+                if rec is not None:
+                    rec.fsm_state = "IDLE"
+                self._broadcast({"t": "fsm", "agent_id": target, "fsm_state": "IDLE"})
             # A service agent may embed a server command in its result using the
             # {"_mars_cmd": {"cmd": "spawn", "args": {...}}, "reply": "…"} pattern.
             # This lets MCP stdio subprocesses trigger server-side actions (e.g.
@@ -569,7 +609,6 @@ class MARSServer:
                 rec = self._state.agents.get(target)
                 if rec is not None:
                     rec.chat.append(ChatMessage(ts=now, sender=target, content=result, direction="in"))
-                    rec.has_reply = True
             else:
                 session.writer.write(
                     (json.dumps({"t": "msg", "from": target, "text": result}) + "\n").encode("utf-8")
@@ -602,14 +641,10 @@ class MARSServer:
             rec = self._state.agents.get(sender_id)
             if rec is not None:
                 rec.chat.append(ChatMessage(ts=now, sender=sender_id, content=text, direction="in"))
-                rec.has_reply = True
-                rec.pending_reply = text
         else:
             target_session.writer.write((json.dumps({"t": "msg", "from": sender_id, "text": text}) + "\n").encode("utf-8"))
             rec = self._state.agents.get(target)
             if rec is not None and session.role == "human":
-                rec.has_reply = False
-                rec.pending_reply = ""
                 rec.chat.append(ChatMessage(ts=now, sender=sender_id, content=text, direction="out"))
 
         self._record_feed(sender_id, target, text[:80])
@@ -653,8 +688,6 @@ class MARSServer:
         rec = self._state.agents.get(sender_id)
         if rec is not None:
             rec.chat.append(ChatMessage(ts=now, sender=sender_id, content=chat_content, direction="in"))
-            rec.has_reply = True
-            rec.pending_reply = chat_content
 
     async def _handle_artifact(self, session: ClientSession, msg: dict[str, Any]) -> None:
         raw = msg.get("data")
@@ -795,12 +828,27 @@ class MARSServer:
                         self._send_to(session, {"t": "status", "text": "No target agent selected", "style": "bold red"})
                         continue
                     await self._route_message(session, target, text)
+                elif mtype == "fsm":
+                    # Agent reports its own FSM state change (e.g. THINKING → IDLE).
+                    # Update the AgentRecord and broadcast to all connected clients.
+                    aid = session.agent_id
+                    if aid:
+                        rec = self._state.agents.get(aid)
+                        if rec is not None:
+                            rec.fsm_state    = str(msg.get("fsm_state")    or rec.fsm_state)
+                            rec.fsm_strategy = str(msg.get("fsm_strategy") or rec.fsm_strategy)
+                            rec.fsm_loop     = msg.get("fsm_loop")
+                        self._broadcast({
+                            "t":            "fsm",
+                            "agent_id":     aid,
+                            "fsm_state":    msg.get("fsm_state",    "—"),
+                            "fsm_strategy": msg.get("fsm_strategy", "—"),
+                            "fsm_loop":     msg.get("fsm_loop"),
+                        })
                 elif mtype == "artifact":
                     await self._handle_artifact(session, msg)
                 elif mtype == "cmd":
                     await self._handle_command(session, str(msg.get("text") or ""))
-                elif mtype in ("problem_restore", "scope_restore"):
-                    self._send_to(session, {"t": "status", "text": "DB: restored 0 problem(s)", "style": "bold cyan"})
         finally:
             await self._remove_session(session)
             try:
@@ -817,7 +865,12 @@ class MARSServer:
     ) -> None:
         self._server_host = host
         self._server_port = port
-        self._server_addr = f"{_local_ip()}:{port}"
+        # Use the literal bind address for loopback (tests); use the outbound
+        # LAN IP when binding on all interfaces so remote agents can connect.
+        if host in ("0.0.0.0", "::", ""):
+            self._server_addr = f"{_local_ip()}:{port}"
+        else:
+            self._server_addr = f"{host}:{port}"
         try:
             server = await asyncio.start_server(
                 self.handle_client,
@@ -842,34 +895,6 @@ class MARSRestAPI:
         self._state = state
         self._cors_allow = list(cors_allow or [])
 
-    def _agent_payload(self, rec: AgentRecord) -> dict[str, Any]:
-        return {
-            "agent_id": rec.agent_id,
-            "agent_type": rec.agent_type,
-            "domain": rec.domain,
-            "platform": rec.platform,
-            "status": rec.status,
-            "fsm_state": rec.fsm_state,
-            "fsm_strategy": rec.fsm_strategy,
-            "model": rec.model,
-            "vendor": rec.vendor,
-            "competence_level": rec.competence_level,
-            "competence_score": rec.competence_score,
-            "skills": list(rec.skills),
-            "avatar": rec.avatar,
-            "role": self._state.agent_roles.get(rec.agent_id, ""),
-            "behaviour": self._state.agent_behaviours.get(rec.agent_id, ""),
-        }
-
-    def _scope_payload(self, scope: Any) -> dict[str, Any]:
-        return {
-            "id": scope.id,
-            "title": scope.title,
-            "path": scope.path,
-            "parent_id": scope.parent_id,
-            "required_skills": list(getattr(scope, "required_skills", [])),
-        }
-
     async def _route(self, method: str, path: str, body: bytes) -> tuple[str, Any]:
         clean_path = path.split("?", 1)[0]
         if method == "OPTIONS":
@@ -880,9 +905,9 @@ class MARSRestAPI:
                 "endpoints": ["GET /", "GET /agents", "POST /spawn", "POST /message", "GET /scopes"],
             }
         if method == "GET" and clean_path == "/agents":
-            return "200 OK", [self._agent_payload(rec) for rec in self._state.agents.values()]
+            return "200 OK", [_agent_payload(rec, self._state) for rec in self._state.agents.values()]
         if method == "GET" and clean_path == "/scopes":
-            return "200 OK", [self._scope_payload(scope) for scope in self._state.scopes]
+            return "200 OK", [_scope_payload(scope) for scope in self._state.scopes]
         if method == "GET" and clean_path == "/problems":
             return "200 OK", []
         if method == "POST" and clean_path == "/spawn":

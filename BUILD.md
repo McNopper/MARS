@@ -25,14 +25,14 @@ cd MARS
 pip install -e ".[dev]"
 ```
 
-The current provider integrations only need `httpx`, which is already a core dependency.
+The current provider integrations only need `httpx` and the `anthropic` SDK (both core dependencies). `gitpython` is bundled for the git service agent. No other provider SDKs are required.
 
 ---
 
 ## Running tests
 
 ```bash
-# All tests
+# All tests (excludes slow LLM provider tests)
 python -m pytest tests/ -v
 
 # A single test file
@@ -40,9 +40,14 @@ python -m pytest tests/unit/test_scope.py -v
 
 # Quick green/red check
 python -m pytest tests/ -x -q
+
+# Include real-LLM provider tests (needs ANTHROPIC_API_KEY / Copilot / Ollama)
+python -m pytest -m llm
 ```
 
-Run `python -m pytest tests/ -x -q` and check the output for the current count.
+Run `python -m pytest tests/ -x -q` and check the output for the current count (approximately 700 tests).
+
+> Tests marked `@pytest.mark.llm` are excluded from the default run via `addopts = "-x -m 'not llm'"` in `pyproject.toml`. They require live API credentials and are intended for manual smoke-testing only.
 
 ### Test structure
 
@@ -59,6 +64,11 @@ python -m pytest tests/ -x -q
 | `runtime/server/test_mcp_adapter.py` | MCPAdapter init, envelope constants |
 | `runtime/agents/test_status_agent.py` | Status agent when REST is unreachable |
 | `runtime/agents/test_launcher_agent.py` | Launcher `_parse_spawn_request` |
+| `runtime/agents/test_shell_agent.py` | Shell agent dispatch, truncation, JSON form |
+| `runtime/agents/test_git_agent.py` | Git agent dispatch, gitpython integration |
+| `runtime/agents/test_memory_agent.py` | Memory agent CRUD, serialisation |
+| `runtime/agents/test_session_agent.py` | Session save/load/list/rename/delete |
+| `runtime/agents/test_scheduler_agent.py` | Scheduler after/every/cancel/list |
 | `runtime/services/test_mcp_server.py` | MCPServer tool dispatch, `_to_content`, protocol |
 | `runtime/services/test_service_utils.py` | Pure helpers: `parse_server`, `build_hello`, `encode_json_artifact`, `looks_like_base64`, etc. |
 | `runtime/services/test_registry.py` | `_ServiceTool` name/description/parameters |
@@ -69,6 +79,7 @@ python -m pytest tests/ -x -q
 | `client/cli/test_cli_models.py` | CLI data models |
 | `client/cli/test_cli_service_manager.py` | Service manager logic |
 | `client/providers/test_provider_registry.py` | Provider registry lookup |
+| `client/providers/test_copilot_provider.py` | Copilot token resolution (config file, env vars) |
 | `client/providers/test_anthropic_provider_ext.py` | Anthropic provider extensions |
 | `client/providers/test_anthropic_thinking.py` | Anthropic extended thinking |
 | `storage/artifacts/test_artifacts.py` | Artifact store read/write |
@@ -100,10 +111,18 @@ python -m pytest tests/ -x -q
 | `test_llm_wire_agent.py` | LLM wire agent full round-trip |
 | `test_mcp_tool_call.py` | Internal MCP tool call round-trip |
 | `test_external_mcp_tool_call.py` | External MCP server tool call end-to-end |
-| `test_anthropic_wire_agent.py` | Anthropic wire agent integration (needs key) |
-| `test_copilot_wire_agent.py` | Copilot wire agent integration (needs subscription) |
+| `test_server_commands.py` | `/spawn`, `/switch`, `/join`, `/part`, `/list` command round-trips |
+| `test_spawn_via_mcp_tool.py` | Agent-to-agent spawning via `launcher` MCP tool |
+| `test_shell_agent_system.py` | Shell agent execution round-trip |
+| `test_git_agent_system.py` | Git agent status/diff/log round-trip |
+| `test_memory_agent_system.py` | Memory agent remember/recall/forget round-trip |
+| `test_anthropic_wire_agent.py` | Anthropic wire agent integration (needs `ANTHROPIC_API_KEY`) |
+| `test_copilot_wire_agent.py` | Copilot wire agent integration (needs Copilot subscription) |
 | `test_ollama_wire_agent.py` | Ollama wire agent integration (needs local Ollama) |
+| `test_multi_provider.py` | Copilot + Ollama together (marked `llm`, excluded from default run) |
 | `test_cli_startup.py` | CLI startup and server connection |
+
+> Tests marked `@pytest.mark.llm` make real LLM provider calls and are excluded from the default run. Run them explicitly with `python -m pytest -m llm`.
 
 ---
 
