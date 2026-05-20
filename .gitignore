@@ -234,3 +234,9 @@ server_err.txt
 server_full.txt
 
 screenshot_current.png
+
+# Claude Code local settings
+.claude/
+
+# Pre-built binaries (download separately; not for version control)
+bin/

@@ -2,7 +2,7 @@
 
 Built-in service agents are managed by the MARS server as **MCP stdio subprocesses** — the server launches them, feeds requests over stdin/stdout, and routes their replies to any participant that called the skill. They do **not** connect to `:7432` via TCP; no `--server` flag is needed.
 
-Add custom agents to `mars/services/agents.ini`;entries with `cost = free` are auto-spawned when the server starts.
+Add custom agents to `mars/runtime/agents/agents.ini`; entries with `cost = free` are auto-spawned when the server starts.
 
 ---
 
@@ -70,17 +70,17 @@ Human operators can always use `/spawn` from the CLI shell regardless.
 
 ## Science agents
 
-These agents require the `science` extra (`pip install -e ".[science]"`).  
-They are auto-spawned if the extra is installed; silently skipped otherwise.
+SymPy and SciPy are included in the default install (`pip install -e .`).
+Both agents are auto-spawned when the server starts.
 
-### ∑ SymPy math agent
+### ∑ SymPy agent
 
 Solves equations and evaluates symbolic expressions using [SymPy](https://www.sympy.org).
 
 - **Skills:** `solve_math`, `math`, `solve`, `equation`, `sympy`, `algebra`, `calculus`, `integrate`, `differentiate`, `simplify`, `factor`
-- **Cost:** free — **requires `pip install -e ".[science]"`**
-- **Spawn:** auto-spawned on server start (when SymPy is installed, MCP stdio)
-- **Standalone:** `mars-agent-math`
+- **Cost:** free
+- **Spawn:** auto-spawned on server start (MCP stdio)
+- **Standalone:** `mars-agent-sympy`
 
 **Accepted request formats:**
 
@@ -106,8 +106,8 @@ Complements the SymPy agent: use SymPy for exact symbolic results, SciPy for
 numerical root-finding, quadrature, optimisation, linear algebra, statistics, and ODEs.
 
 - **Skills:** `solve_scipy`, `scipy`, `numerical`, `quadrature`, `rootfind`, `optimize`, `linalg`, `ode`, `statistics`, `stats`
-- **Cost:** free — **requires `pip install -e ".[science]"`**
-- **Spawn:** auto-spawned on server start (when SciPy is installed, MCP stdio)
+- **Cost:** free
+- **Spawn:** auto-spawned on server start (MCP stdio)
 - **Standalone:** `mars-agent-scipy`
 
 **Accepted request formats:**
@@ -195,7 +195,7 @@ Lists installed and running Ollama models as JSON.
 - **Spawn:** auto-spawned on server start (MCP stdio)
 - **Standalone:** `mars-agent-ollama`
 
-### 🔊 Echo renderer presets (`echo-text` / `echo-md` / `echo-void` / `echo-voice`)
+### Echo renderer presets (`echo-text` / `echo-md` / `echo-void`)
 
 Used to control how the CLI renders incoming replies.
 
@@ -204,9 +204,8 @@ Used to control how the CLI renders incoming replies.
 | `echo-text` | Plain text output |
 | `echo-md` | Markdown-rendered output |
 | `echo-void` | Discard (silent) |
-| `echo-voice` | Plain text + TTS speech (when available) |
 
-Use `/echo <text|md|void|voice>` to switch.
+Use `/echo <text|md|void>` to switch.
 
 ---
 
@@ -223,7 +222,7 @@ The server replies with a list of `{skill, agent_id, agent_type}` entries. To us
 send a `msg` directly to the matching agent_id:
 
 ```json
-{"t":"msg","target":"svc.math@1","text":"solve x**2 - 4 = 0"}
+{"t":"msg","target":"svc.sympy@1","text":"solve x**2 - 4 = 0"}
 ```
 
 The service agent replies with a `msg` that the server routes back to the sender.
@@ -240,10 +239,10 @@ server commands), a TCP wire agent can connect to `:7432` and use the protocol b
 
 ### MCP stdio (recommended for new agents)
 
-Register tools using the `MCPServer` decorator from `mars.services.mcp_server`:
+Register tools using the `MCPServer` decorator from `mars.runtime.services.mcp_server`:
 
 ```python
-from mars.services.mcp_server import MCPServer
+from mars.runtime.services.mcp_server import MCPServer
 import asyncio
 
 server = MCPServer("svc.myagent", "1.0.0")
@@ -317,7 +316,7 @@ The CLI renders agents by `agent_type`:
 
 ## Adding a custom agent
 
-Add a section to `mars/services/agents.ini`:
+Add a section to `mars/runtime/agents/agents.ini`:
 
 ```ini
 [my-agent]
@@ -337,13 +336,84 @@ For agents that need a direct TCP connection (rare), omit `protocol = mcp` and u
 
 ---
 
+## Integrating external MCP servers
+
+Any third-party MCP server that runs as a **stdio subprocess** (the standard transport)
+can be added to MARS without writing any Python code.
+
+### How it works
+
+When the server starts (or when `/spawn <name>` is issued), MARS:
+
+1. Launches the external MCP process with its `command`
+2. Performs the MCP `initialize` + `tools/list` handshake
+3. Publishes every discovered tool — with its **real input schema** — to all LLM wire agents via a `spawn` event
+4. Routes each LLM tool call as a structured `tools/call` JSON-RPC request, passing the full argument dict verbatim
+
+This means multi-parameter tools (e.g. `search_repositories(q, page, per_page)`) work
+correctly: the LLM sees the real schema and MARS forwards the structured arguments
+without flattening them to a plain string.
+
+### Adding an entry
+
+```ini
+[my-external-server]
+description = Short description of what this server provides
+command = npx -y some-mcp-package          # or: docker run -i --rm some/image
+skills = primary_skill, secondary_skill    # used for skill routing + display
+category = external
+cost = demand                              # demand = /spawn only; free = auto-spawn
+protocol = mcp
+```
+
+**`cost = demand`** means the server is not started automatically — use `/spawn my-external-server` at runtime.  
+**`cost = free`** auto-starts it on every server launch (only use this for servers that need no credentials).
+
+### Example: GitHub MCP server
+
+The `[github]` entry is included in `agents.ini` (pre-configured, `cost = demand`).
+
+**The binary is not shipped** — download it once and place it in `bin/` at the project root (gitignored). See [SETUP.md §5](SETUP.md) for platform-specific download instructions.
+
+```ini
+[github]
+description = GitHub — search repos, read/write files, manage issues, PRs, and workflows
+command = bin/github-mcp-server.exe stdio    ; Windows
+;command = bin/github-mcp-server stdio       ; Linux / macOS
+skills = search_repositories, get_file_contents, create_issue, list_issues, ...
+category = external
+cost = demand
+protocol = mcp
+```
+
+**Prerequisites:**
+
+| What | How |
+|------|-----|
+| Binary | Download from [github-mcp-server releases](https://github.com/github/github-mcp-server/releases/latest), place in `bin/` |
+| Token | `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env` — use `gh auth token` or a PAT with scopes `repo`, `read:org`, `read:user` |
+
+**Usage:**
+
+```
+/spawn github
+```
+
+After spawning, the LLM can call any GitHub tool directly:
+
+> *"Search for Python repos about multi-agent systems with more than 100 stars."*  
+> *"Create an issue titled 'Fix login bug' in owner/repo."*  
+> *"Read the contents of src/main.py from owner/repo on branch main."*
+
+---
+
 ## Implementing a service agent
 
 ### Recommended: MCPServer decorator
 
 ```python
 import asyncio
-from mars.services.mcp_server import MCPServer
+from mars.runtime.services.mcp_server import MCPServer
 
 server = MCPServer("svc.myagent", "1.0.0")
 
@@ -371,7 +441,7 @@ Use `service_utils.run_wire_agent` for agents that need persistent server connec
 ```python
 import asyncio
 from typing import Any
-from mars.services.service_utils import build_hello, run_wire_agent
+from mars.runtime.services.service_utils import build_hello, run_wire_agent
 
 def my_handler(text: str) -> dict[str, Any]:
     return {"result": f"processed: {text}"}

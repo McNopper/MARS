@@ -1,10 +1,11 @@
 """System tests for the GitHub Copilot provider via the wire agent.
 
-Skipped automatically when ``GITHUB_TOKEN`` (or ``GH_TOKEN``) is not set.
+Skipped automatically when no GitHub OAuth token is available.
+Requires ``gh auth login`` (once) — no extra env vars needed.
 
 Run manually::
 
-    GITHUB_TOKEN=ghp_... python -m pytest tests/system/test_copilot_wire_agent.py -v
+    python -m pytest tests/system/test_copilot_wire_agent.py -v -s
 """
 from __future__ import annotations
 
@@ -17,8 +18,8 @@ import time
 
 import pytest
 
-from mars.srv.main import MARSServer
-from mars.cli.models import MARSState
+from mars.runtime.server.main import MARSServer
+from mars.client.cli.models import MARSState
 
 
 # ---------------------------------------------------------------------------
@@ -26,12 +27,17 @@ from mars.cli.models import MARSState
 # ---------------------------------------------------------------------------
 
 def _copilot_available() -> bool:
-    return bool(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+    """Return True when a usable GitHub OAuth token can be found."""
+    from mars.client.providers.copilot import _resolve_token
+    try:
+        return bool(_resolve_token(None))
+    except Exception:
+        return False
 
 
 pytestmark = pytest.mark.skipif(
     not _copilot_available(),
-    reason="GITHUB_TOKEN or GH_TOKEN not set",
+    reason="No GitHub token — run 'gh auth login' first",
 )
 
 
@@ -79,7 +85,7 @@ async def test_copilot_wire_agent_registers(unused_tcp_port):
     await _read_until(h_reader, t="welcome", timeout=5.0)
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "copilot"],
         stdout=subprocess.DEVNULL,
@@ -102,7 +108,7 @@ async def test_copilot_wire_agent_chat(unused_tcp_port):
     await _read_until(h_reader, t="welcome", timeout=5.0)
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "copilot",
          "--model", "gpt-4o-mini"],

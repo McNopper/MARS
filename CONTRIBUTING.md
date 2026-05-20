@@ -43,18 +43,29 @@ python -m pytest tests/ -v
 
 ```
 mars/
-  artifacts/    Text and zip artifact store
-  cli/          Rich CLI + MARSClientTerminal (thin client connecting to mars-server)
-  providers/    LLM provider adapters + registry (mock, anthropic, copilot, ollama)
-  scopes/       Scope and ScopeStore — markdown-based domain knowledge arenas
-  services/     Service agents (clock, math, scipy, file, url, launcher, …) + INI registry
-  srv/          Headless server: TCP (7432), REST (7433), WebSocket (7434), audit log
+  constants.py          Central registry of all magic values (strings, numbers, timeouts)
+  runtime/
+    server/             Headless TCP server: main.py, mcp_adapter.py, REST/WebSocket endpoints
+    agents/             Built-in MCP service agents (clock, math, file, url, …) + agents.ini
+    services/           Agent infrastructure: llm_wire_agent.py, registry.py, mcp_server.py, service_utils.py
+  client/
+    cli/                Rich three-pane TUI: main.py, client.py, models.py, commands.py, …
+    providers/          LLM provider adapters: mock, anthropic, copilot, ollama, base, registry
+  storage/
+    artifacts/          Text and zip artifact store
+    scopes/             Scope and ScopeStore — markdown-based domain knowledge arenas
 tests/
-  unit/         Pure-Python unit tests (no I/O, no network)
-  component/    Single-component tests with lightweight fakes
-  module/       Multi-component module tests (providers, registry, MCP adapter)
-  system/       End-to-end system tests (wire agents, CLI startup, MCP tool calls)
-papers/         Original research papers tracked via Git LFS
+  unit/                 Pure-Python unit tests, mirroring mars/ sub-tree
+    runtime/server/     Unit tests for server internals
+    runtime/agents/     Unit tests for individual agent tool functions
+    runtime/services/   Unit tests for mcp_server, service_utils, registry, llm_wire_agent
+    client/cli/         Unit tests for CLI models, utilities, rendering
+    client/providers/   Unit tests for provider logic (mock, anthropic, openai_compat, …)
+    storage/            Unit tests for artifacts and scopes
+  component/            Single-component tests with lightweight fakes
+  module/               Multi-component integration tests, mirroring mars/ sub-tree
+  system/               End-to-end tests: real TCP server, real subprocesses, real wire agents
+papers/                 Original research papers tracked via Git LFS
 ```
 
 ---
@@ -93,7 +104,7 @@ papers/         Original research papers tracked via Git LFS
 ### Imports
 
 - Standard library → third-party → internal (`mars.*`) — one blank line between groups.
-- Import canonical types from `mars.providers.base` (e.g. `LLMMessage`, `ToolSpec`).
+- Import canonical types from `mars.client.providers.base` (e.g. `LLMMessage`, `ToolSpec`).
 
 ### Comments and docstrings
 
@@ -109,14 +120,14 @@ papers/         Original research papers tracked via Git LFS
 
 ## Adding a provider
 
-All providers live in `mars/providers/` and extend `LLMProvider` from `mars.providers.base`.
+All providers live in `mars/client/providers/` and extend `LLMProvider` from `mars.client.providers.base`.
 
-1. **Create** `mars/providers/myprovider.py`:
+1. **Create** `mars/client/providers/myprovider.py`:
 
 ```python
 from __future__ import annotations
 
-from mars.providers.base import LLMMessage, LLMProvider, LLMResponse, ModelInfo
+from mars.client.providers.base import LLMMessage, LLMProvider, LLMResponse, ModelInfo
 
 
 class MyProvider(LLMProvider):
@@ -134,13 +145,13 @@ class MyProvider(LLMProvider):
         return [ModelInfo(id="my-model-v1", name="My Model v1")]
 ```
 
-2. **Register** it in `mars/providers/registry.py`:
+2. **Register** it in `mars/client/providers/registry.py`:
 
 ```python
-"myprovider": ("mars.providers.myprovider", "MyProvider"),
+"myprovider": ("mars.client.providers.myprovider", "MyProvider"),
 ```
 
-3. **Add tests** in `tests/module/test_providers.py`.
+3. **Add tests** in `tests/module/client/providers/test_providers.py`.
 
 4. If the SDK needs an optional install, add an entry to `[project.optional-dependencies]` in `pyproject.toml`.
 
@@ -163,7 +174,7 @@ All tiers run together with `python -m pytest tests/ -x -q`.
 
 ### Conventions
 
-- One test file per subsystem, named `tests/test_<subsystem>.py`.
+- Test files mirror the source tree: `tests/unit/runtime/services/test_registry.py` covers `mars/runtime/services/registry.py`.
 - Group related tests in classes (`class TestMyFeature:`, `class TestSomething:`, …).
 - Use `@pytest.mark.asyncio` only if your project version requires it — current config sets `asyncio_mode = "auto"`.
 - Name tests descriptively: `test_scope_store_finds_by_skill`, not `test_scope_1`.
@@ -173,7 +184,7 @@ All tiers run together with `python -m pytest tests/ -x -q`.
 
 ```python
 import pytest
-from mars.providers.mock import MockProvider
+from mars.client.providers.mock import MockProvider
 
 class TestMyFeature:
     async def test_something(self):

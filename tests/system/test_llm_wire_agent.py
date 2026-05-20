@@ -17,8 +17,8 @@ import time
 
 import pytest
 
-from mars.srv.main import MARSServer
-from mars.cli.models import MARSState
+from mars.runtime.server.main import MARSServer
+from mars.client.cli.models import MARSState
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +72,7 @@ async def test_wire_agent_registers_as_llm_agent(unused_tcp_port):
 
     # Spawn wire agent subprocess with mock provider
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "mock",
          "--name", "llm.mock"],
@@ -99,7 +99,7 @@ async def test_wire_agent_replies_to_message(unused_tcp_port):
     my_id = welcome["your_id"]
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "mock",
          "--name", "llm.mock"],
@@ -138,7 +138,7 @@ async def test_wire_agent_multi_turn(unused_tcp_port):
     await _read_until(h_reader, t="welcome")
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "mock",
          "--name", "llm.mock"],
@@ -172,7 +172,7 @@ async def test_despawn_on_wire_agent_exit(unused_tcp_port):
     await _read_until(h_reader, t="welcome")
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "mock",
          "--name", "llm.mock"],
@@ -200,7 +200,7 @@ async def test_despawn_on_wire_agent_exit(unused_tcp_port):
 
     # Spawn wire agent subprocess with mock provider
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "mock",
          "--name", "llm.mock"],
@@ -228,7 +228,7 @@ async def test_wire_agent_replies_to_message(unused_tcp_port):
     my_id = welcome["your_id"]
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "mock",
          "--name", "llm.mock"],
@@ -268,7 +268,7 @@ async def test_wire_agent_multi_turn(unused_tcp_port):
     await _read_until(h_reader, t="welcome")
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "mock",
          "--name", "llm.mock"],
@@ -303,7 +303,7 @@ async def test_despawn_on_wire_agent_exit(unused_tcp_port):
     await _read_until(h_reader, t="welcome")
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "mock",
          "--name", "llm.mock"],

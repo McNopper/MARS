@@ -14,44 +14,40 @@ dependencies = [
     "pydantic>=2.7",
     "rich>=13.0",
     "Pillow>=10.0",
+    "sympy>=1.12",
+    "scipy>=1.12",
+    "numpy>=1.26",
+    "anthropic>=0.25",
 ]
 
 [project.scripts]
-mars = "mars.cli.main:main"
-mars-server = "mars.srv.main:main"
-mars-llm-wire-agent = "mars.services.llm_wire_agent:main"
-mars-agent-clock = "mars.services.clock_agent:main"
-mars-agent-profiler = "mars.services.profiler_agent:main"
-mars-agent-status = "mars.services.status_agent:main"
-mars-agent-math = "mars.services.math_agent:main"
-mars-agent-scipy = "mars.services.scipy_agent:main"
-mars-agent-file = "mars.services.file_agent:main"
-mars-agent-url = "mars.services.url_agent:main"
-mars-agent-ollama = "mars.services.ollama_agent:main"
-mars-agent-launcher = "mars.services.launcher_agent:main"
+mars = "mars.client.cli.main:main"
+mars-server = "mars.runtime.server.main:main"
+mars-llm-wire-agent = "mars.runtime.services.llm_wire_agent:main"
+mars-agent-clock = "mars.runtime.agents.clock_agent:main"
+mars-agent-profiler = "mars.runtime.agents.profiler_agent:main"
+mars-agent-status = "mars.runtime.agents.status_agent:main"
+mars-agent-sympy = "mars.runtime.agents.sympy_agent:main"
+mars-agent-scipy = "mars.runtime.agents.scipy_agent:main"
+mars-agent-file = "mars.runtime.agents.file_agent:main"
+mars-agent-url = "mars.runtime.agents.url_agent:main"
+mars-agent-ollama = "mars.runtime.agents.ollama_agent:main"
+mars-agent-launcher = "mars.runtime.agents.launcher_agent:main"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
 ]
-anthropic = [
-    "anthropic>=0.25",
-]
-science = [
-    "sympy>=1.12",
-    "scipy>=1.12",
-    "numpy>=1.26",
-]
 all = [
-    "mars[dev,anthropic,science]",
+    "mars[dev]",
 ]
 
 [tool.setuptools.packages.find]
 include = ["mars*"]
 
 [tool.setuptools.package-data]
-"mars.services" = ["agents.ini"]
+"mars.runtime.agents" = ["agents.ini"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

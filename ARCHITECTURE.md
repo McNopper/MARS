@@ -24,7 +24,7 @@ For operational guides see:
 Participants (all identical TCP protocol):
   mars (CLI)         → role="human"    human@1, human@2, …
   LLM wire agent     → role="agent"    llm.ollama@1, llm.anthropic@1, …
-  Service agents     → role="agent"    svc.clock@1, svc.math@1, …
+  Service agents     → role="agent"    svc.clock@1, svc.sympy@1, …
 ```
 
 Every participant:
@@ -44,9 +44,9 @@ All spawning happens **on the server**. Any participant can request it:
 {"t":"cmd","cmd":"spawn","args":{"provider":"ollama","model":"llama3.2"}}
 ```
 
-The server launches `python -m mars.services.llm_wire_agent --provider ollama …` as a
+The server launches `python -m mars.runtime.services.llm_wire_agent --provider ollama …` as a
 subprocess. That process connects back via TCP like any other agent.
-Service agents are spawned the same way from `agents.ini`.
+Service agents are spawned the same way from `mars/runtime/agents/agents.ini`.
 
 ```
 mars --remote HOST:PORT   → skips subprocess, connects directly to a running server
@@ -88,7 +88,7 @@ the TCP wire protocol.
                         │
         ┌───────────────┼────────────────────┐
         │               │                    │
-  human@1          svc.math@1         svc.profiler@1
+  human@1          svc.sympy@1         svc.profiler@1
   (CLI terminal)   skills: solve_math, skills: get_profile,
                    math, sympy, …     profiler, cpu, …
 ```
@@ -104,82 +104,33 @@ to the requesting participant.
 
 ---
 
-## 🗺️ Domain Scopes — knowledge arenas
+## 🗺️ Domain Scopes — knowledge arenas (data model, not yet active)
 
-A **Scope** (`mars/scopes/scope.py`) is a *static* domain definition loaded from a `.md` file.
-Scopes are permanent knowledge arenas — they carry no runtime lifecycle.
-**Problems** are posed *within* one or more Scopes; agents search for Solutions to Problems.
+> **Status:** data model and loader implemented; runtime skill-routing and problem orchestration are **not yet implemented**.
 
-```
-Scope  (static .md file)        Problem  (active challenge)        Solution  (composite)
-────────────────────────        ─────────────────────────          ──────────────────────
-id, title, document             id, title, description             contributions: list[
-required_skills                 scope_ids: list[str]               │  DomainContribution ]
-parent_id                       status: open→assigned→             summary
-                                  in_progress→solved|closed        is_complete: bool
-                                required_skills
-                                agents: list[str]
-```
+The `mars/storage/scopes/` package defines the data model:
 
-A **Solution** is *subdivided* into **DomainContributions** — one per participating agent.
-This mirrors the Contract Net Protocol (Smith 1980): Problem ↔ task announcement,
-DomainContribution ↔ contractor result; and EMIKA sub-scope decomposition (Müller et al. 2004).
+- `Scope` — static domain definition loaded from a `.md` file (id, title, document, required_skills, parent_id)
+- `Problem` — a challenge posed within one or more scopes (status lifecycle: open → assigned → in_progress → solved | closed)
+- `Solution` / `DomainContribution` — composite answer subdivided per agent
 
-### Domain topology — 6-tier hierarchy
+**What works today:** `ScopeStore` loads `.md` files from `scopes/`; the REST API exposes `GET /scopes`. The CLI can display scope metadata.
 
-The `scopes/` directory implements a universal knowledge topology grounded in DDC, UDC,
-Wikipedia's Outline of Knowledge, and the MARS research lineage:
+**Not yet implemented:** automatic agent assignment based on `required_skills`, problem lifecycle management, solution synthesis, and competence-tier routing.
 
-```
-U0 — Universal
-│
-├─ TIER 1  FORMAL SCIENCES          PH1 Philosophy · M1 Math · L1 Language
-│                                   CS1 Computer Science · AI1 Artificial Intelligence
-│
-├─ TIER 2  NATURAL SCIENCES         SC1 Science[meta] · P1 Physics · B1 Biology
-│                                   C1 Climate & Earth
-│
-├─ TIER 3  HUMAN & SOCIAL           PS1 Psychology · SO1 Sociology · EC1 Economics
-│                                   ET1 Ethics · SR1 Spirituality · PL1 Political Science
-│
-├─ TIER 4  HUMAN EXPERIENCE         FA1 Family · LV1 Love · SX1 Sexuality
-│                                   FF1 Flora & Fauna · SP1 Sports · AR1 Arts · HB1 Hobbies
-│
-├─ TIER 5  TECHNOLOGY & INFRA       IN1 Internet · E1 Energy · CM1 Communication
-│                                   TR1 Transport · T1 Trading & Markets
-│
-└─ TIER 6  GLOBAL CHALLENGES        F1 Food Security · K1 Conflict · H1 Health
-```
-
-> **Tier 4 note:** Flora & Fauna (`FF1`) sits in Human Experience because the human
-> *relationship* with plants and animals (stewardship, biophilia, husbandry) is
-> experiential. Scientific study of life belongs in Tier 2 (`B1 Biology`, `C1 Climate`).
-
-### Skill-match routing for scopes
-
-The server's skill index maps each skill keyword to the best registered `agent_id` by
-first-registered order. Future: competence-tier ranking.
+The planned 6-tier knowledge topology (Formal Sciences → Natural Sciences → Human & Social → Human Experience → Technology & Infrastructure → Global Challenges) is defined in `scopes/` as `.md` files but is not wired into any agent dispatch logic yet.
 
 ---
 
-## 🎮 Game-theory FSM (wire agent library)
+## 🎮 Agent FSM metadata (fields only, no engine)
 
-Wire agents (LLM subprocesses) can embed a finite-state machine. States and strategies are declared in the wire agent and broadcast as status events:
+> **Status:** `AgentRecord` stores `fsm_state` and `fsm_strategy` fields; the CLI sidebar displays them. There is **no platform FSM engine** — transitions are not driven by MARS.
 
-```
-States (preset: lifecycle)    IDLE → THINKING → ACTING → WAITING → DONE
-States (preset: negotiation)  BIDDING → NEGOTIATING → SETTLING → AGREED / REJECTED
-States (preset: iterative)    PLANNING → EXECUTING → REVIEWING → DONE / GIVING_UP
-
-Strategies   COOPERATIVE · COMPETITIVE · TIT_FOR_TAT · GRIM_TRIGGER
-             PAVLOV · MINIMAX · RANDOM · NASH_SEEKING · MDP
-```
-
-State transitions are broadcast as `{"t":"status","agent_id":"…","state":"…"}` events.
+Agents can self-report their state via `{"t":"fsm","fsm_state":"…","fsm_strategy":"…"}` events. The CLI renders these. Planned state presets and strategies (COOPERATIVE, TIT_FOR_TAT, NASH_SEEKING, etc.) are documented in the research papers but not implemented.
 
 ---
 
-Built-in providers are implemented in `mars/providers/`:
+Built-in providers are implemented in `mars/client/providers/`:
 
 | Provider | Name | Free | Extended thinking | Adaptive thinking | Prompt caching |
 |----------|------|------|-------------------|-------------------|----------------|
@@ -200,9 +151,9 @@ Agents differ in how they connect to the server. LLM wire agents and CLI users c
 
 | Icon | `agent_type` | Description |
 |------|-------------|-------------|
-| 🤖 | `LLMAgent` | LLM wire agent — `mars/services/llm_wire_agent.py` |
-| 🔧 | `ServiceAgent` | Service agent — profiler, math, file, url, custom |
-| 👤 | `HumanUser` | CLI terminal — `mars/cli/main.py` |
+| 🤖 | `LLMAgent` | LLM wire agent — `mars/runtime/services/llm_wire_agent.py` |
+| 🔧 | `ServiceAgent` | Service agent — profiler, sympy, scipy, file, url, custom |
+| 👤 | `HumanUser` | CLI terminal — `mars/client/cli/main.py` |
 
 LLM wire agents maintain conversation history in-process. They are reactive by default;
 proactive (goal-directed autopilot) behaviour is a future extension.

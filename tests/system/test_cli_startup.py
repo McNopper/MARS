@@ -1,4 +1,4 @@
-"""Smoke tests: verify mars.cli.main imports cleanly and can be invoked."""
+"""Smoke tests: verify mars.client.cli.main imports cleanly and can be invoked."""
 from __future__ import annotations
 
 import importlib
@@ -13,28 +13,28 @@ class TestCLIImports:
         importlib.import_module(module)
 
     def test_import_cli_main(self) -> None:
-        self._import("mars.cli.main")
+        self._import("mars.client.cli.main")
 
     def test_import_cli_models(self) -> None:
-        self._import("mars.cli.models")
+        self._import("mars.client.cli.models")
 
     def test_import_cli_utils(self) -> None:
-        self._import("mars.cli.utils")
+        self._import("mars.client.cli.utils")
 
     def test_import_cli_service_manager(self) -> None:
-        self._import("mars.cli.service_manager")
+        self._import("mars.client.cli.service_manager")
 
     def test_import_cli_renderer(self) -> None:
-        self._import("mars.cli.renderer")
+        self._import("mars.client.cli.renderer")
 
     def test_import_cli_client(self) -> None:
-        self._import("mars.cli.client")
+        self._import("mars.client.cli.client")
 
     def test_no_github_models_import(self) -> None:
         """Verify the removed provider is not imported anywhere in cli modules."""
         for mod_name in [
-            "mars.cli.main",
-            "mars.cli.client",
+            "mars.client.cli.main",
+            "mars.client.cli.client",
         ]:
             mod = importlib.import_module(mod_name)
             src_file = getattr(mod, "__file__", "") or ""
@@ -50,7 +50,7 @@ class TestCLIHelpFlag:
 
     def test_help_exits_zero(self) -> None:
         result = subprocess.run(
-            [sys.executable, "-m", "mars.cli.main", "--help"],
+            [sys.executable, "-m", "mars.client.cli.main", "--help"],
             capture_output=True,
             text=True,
             timeout=15,
@@ -59,7 +59,7 @@ class TestCLIHelpFlag:
 
     def test_help_shows_usage(self) -> None:
         result = subprocess.run(
-            [sys.executable, "-m", "mars.cli.main", "--help"],
+            [sys.executable, "-m", "mars.client.cli.main", "--help"],
             capture_output=True,
             text=True,
             timeout=15,
@@ -68,7 +68,7 @@ class TestCLIHelpFlag:
 
     def test_help_lists_provider_option(self) -> None:
         result = subprocess.run(
-            [sys.executable, "-m", "mars.cli.main", "--help"],
+            [sys.executable, "-m", "mars.client.cli.main", "--help"],
             capture_output=True,
             text=True,
             timeout=15,
@@ -77,7 +77,7 @@ class TestCLIHelpFlag:
 
     def test_help_lists_model_option(self) -> None:
         result = subprocess.run(
-            [sys.executable, "-m", "mars.cli.main", "--help"],
+            [sys.executable, "-m", "mars.client.cli.main", "--help"],
             capture_output=True,
             text=True,
             timeout=15,

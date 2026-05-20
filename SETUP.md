@@ -6,12 +6,14 @@ A focused, step-by-step setup guide. For deeper build, server, and development t
 
 ## 1. Prerequisites
 
-| Requirement | Minimum version |
-|-------------|-----------------|
-| Python | 3.11 |
-| pip | 23+ |
-| git | 2.x |
-| Git LFS | required to pull `papers/` PDFs |
+### Required
+
+| Requirement | Minimum version | Notes |
+|-------------|-----------------|-------|
+| Python | 3.11 | 3.12+ recommended |
+| pip | 23+ | |
+| git | 2.x | |
+| Git LFS | any | required to pull `papers/` PDFs |
 
 Verify:
 
@@ -20,6 +22,24 @@ python --version
 pip --version
 git --version
 git lfs version
+```
+
+### Optional — only needed for specific providers
+
+MARS starts and all tests run (skipping unavailable providers) without any of these.
+
+| Tool | Why you need it | Install |
+|------|----------------|---------|
+| **GitHub CLI (`gh`)** | Copilot auth — `gh auth login` stores an OAuth token that MARS reads automatically | [cli.github.com](https://cli.github.com) · `winget install GitHub.cli` · `brew install gh` |
+| **Ollama** | Local LLM inference — free, no API key | [ollama.com/download](https://ollama.com/download) · `winget install Ollama.Ollama` · `brew install ollama` |
+| **GitHub MCP server binary** | GitHub service agent — search repos, manage issues/PRs | Pre-bundled at `mars/runtime/agents/bin/github-mcp-server.exe`; see §5 below |
+
+System tests check for each optional tool and **skip automatically** when it is not available:
+
+```
+tests/system/test_copilot_wire_agent.py   → skipped if gh auth login not done
+tests/system/test_ollama_wire_agent.py    → skipped if Ollama not running
+tests/system/test_multi_provider.py       → skipped if either Copilot or Ollama unavailable
 ```
 
 ---
@@ -50,37 +70,21 @@ source .venv/bin/activate
 
 ## 4. Install MARS
 
-### Core install (LLM agents + basic service agents)
+### Core install
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-### With science agents (SymPy + SciPy math)
-
-```bash
-pip install -e ".[dev,science]"
-```
-
-This adds the **SymPy math agent** (symbolic algebra/calculus) and the **SciPy numerical agent**
-(root-finding, integration, optimisation, statistics, linear algebra, ODEs).
-Both are auto-spawned when the server starts if the packages are present.
-
-### Install everything
-
-```bash
-pip install -e ".[all]"
-```
-
-Equivalent to `.[dev,anthropic,science]` — installs all optional dependencies at once.
+This installs all runtime dependencies — LLM providers (OpenAI-compatible, Anthropic, Ollama, Copilot),
+the SymPy symbolic math agent, the SciPy numerical math agent, and all other service agents.
+All agents are auto-spawned when the server starts.
 
 ### Optional extras summary
 
 | Extra | Packages added | Purpose |
 |-------|---------------|---------|
 | `dev` | pytest, pytest-asyncio | Run the test suite |
-| `anthropic` | anthropic ≥ 0.25 | Use Anthropic Claude models |
-| `science` | sympy ≥ 1.12, scipy ≥ 1.12, numpy ≥ 1.26 | SymPy + SciPy math service agents |
 | `all` | all of the above | Full installation |
 
 ---
@@ -95,12 +99,7 @@ Open `.env` and fill in whichever provider settings you want to use.
 
 ### Anthropic / Claude — paid, top-tier quality
 
-Anthropic is the only **paid** provider currently shipped. Install the optional
-SDK extra, set your API key, and you can chat with any current Claude model:
-
-```bash
-pip install -e ".[anthropic]"          # adds anthropic>=0.25 to the venv
-```
+Anthropic is the only **paid** provider currently shipped. Set your API key and you can chat with any current Claude model:
 
 ```env
 # .env
@@ -111,12 +110,12 @@ Get a key at <https://console.anthropic.com> → **API Keys → Create Key**.
 
 ```bash
 # Standalone CLI
-python -m mars.cli.main --provider anthropic                                # default: claude-sonnet-4-6
-python -m mars.cli.main --provider anthropic --model claude-opus-4-7        # adaptive thinking
-python -m mars.cli.main --provider anthropic --model claude-haiku-4-5       # fastest tier
+python -m mars.client.cli.main --provider anthropic                                # default: claude-sonnet-4-6
+python -m mars.client.cli.main --provider anthropic --model claude-opus-4-7        # adaptive thinking
+python -m mars.client.cli.main --provider anthropic --model claude-haiku-4-5       # fastest tier
 
 # Server: spawn one Anthropic agent on startup
-python -m mars.srv.main --provider anthropic
+python -m mars.runtime.server.main --provider anthropic
 
 # Inside any CLI / TUI client
 /spawn anthropic                                                            # alias: /spawn claude
@@ -130,6 +129,62 @@ Notes:
   thinking. For others you can opt in by passing `effort="low|medium|high"` to
   `AnthropicProvider` directly from Python.
 - Prompt caching can be enabled per-agent via `cache_prompts=True`.
+
+### GitHub Copilot — free with a Copilot subscription
+
+GitHub Copilot Chat API is available to anyone with a **GitHub Copilot Individual, Business, or Enterprise** subscription. There is no per-token cost beyond the subscription.
+
+**Authentication — `gh auth login` (recommended)**
+
+Copilot requires a GitHub **OAuth token**, not a Personal Access Token (PAT).
+The easiest way to get one is the GitHub CLI:
+
+```bash
+# Install the GitHub CLI
+# Windows (winget)
+winget install GitHub.cli
+
+# macOS
+brew install gh
+
+# Linux
+# see https://github.com/cli/cli#installation
+
+# Then log in once:
+gh auth login
+```
+
+Follow the prompts (browser or device code). After that, MARS calls `gh auth token` automatically — no `.env` entry needed.
+
+**Alternative: pass the token explicitly**
+
+If you have a GitHub OAuth token (`gho_…`) from another source, pass it directly:
+
+```env
+# Not needed if gh auth login was used — MARS auto-discovers the token.
+# Only set this if you want to override the gh CLI token.
+# GITHUB_TOKEN=gho_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+> ⚠️ **Personal Access Tokens (`ghp_…`) do not work** for Copilot.
+> Use `gh auth login` instead.
+
+**Start MARS with Copilot**
+
+```bash
+# Standalone CLI
+python -m mars.client.cli.main --provider copilot                # default: gpt-4o
+python -m mars.client.cli.main --provider copilot --model claude-3.7-sonnet
+
+# Server
+python -m mars.runtime.server.main --provider copilot
+
+# Inside any CLI / TUI client
+/spawn copilot
+/spawn copilot gpt-4o-mini
+```
+
+Available models: `gpt-4o` (default), `gpt-4o-mini`, `o1-mini`, `claude-3.5-sonnet`, `claude-3.7-sonnet`.
 
 ### Local-only provider (no key, no cloud)
 
@@ -172,6 +227,79 @@ ollama pull deepseek-r1:8b    # 4.9 GB — reasoning model
 
 Ollama auto-starts its server on `http://localhost:11434` when you install it.
 
+### GitHub MCP server — optional service agent
+
+The GitHub MCP server gives LLM agents direct access to the GitHub API: search repos, read/write files, manage issues and PRs. It is **not auto-spawned** — use `/spawn github` when you need it.
+
+**1. Download the binary**
+
+Download the pre-built binary for your platform from the [releases page](https://github.com/github/github-mcp-server/releases/latest) and place it in the `bin/` directory at the project root (already gitignored):
+
+```bash
+# Create the bin/ directory if it doesn't exist
+mkdir bin
+
+# Download — replace the URL with the latest release for your platform:
+# Windows x64
+curl -L -o bin/github-mcp-server.zip \
+  https://github.com/github/github-mcp-server/releases/latest/download/github-mcp-server_Windows_x86_64.zip
+cd bin && unzip github-mcp-server.zip && cd ..
+
+# Linux x64
+curl -L https://github.com/github/github-mcp-server/releases/latest/download/github-mcp-server_Linux_x86_64.tar.gz \
+  | tar -xz -C bin/
+
+# macOS arm64
+curl -L https://github.com/github/github-mcp-server/releases/latest/download/github-mcp-server_Darwin_arm64.tar.gz \
+  | tar -xz -C bin/
+```
+
+Or with PowerShell (Windows):
+
+```powershell
+New-Item -ItemType Directory -Force bin
+$url = (gh api repos/github/github-mcp-server/releases/latest --jq `
+  '.assets[] | select(.name | contains("Windows_x86_64")) | .browser_download_url')
+Invoke-WebRequest $url -OutFile bin\github-mcp-server.zip
+Expand-Archive bin\github-mcp-server.zip bin\ -Force
+```
+
+**2. Set the active command in `agents.ini`**
+
+The file already has the correct entry. On Linux/macOS, swap the active `command` line:
+
+```ini
+; Windows (default)
+command = bin/github-mcp-server.exe stdio
+
+; Linux / macOS — comment out the line above and uncomment this one:
+;command = bin/github-mcp-server stdio
+```
+
+**3. Set credentials**
+
+Add to `.env`:
+
+```env
+GITHUB_PERSONAL_ACCESS_TOKEN=gho_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Use the value from `gh auth token` (OAuth token) or a PAT with scopes `repo`, `read:org`, `read:user`.
+
+**4. Spawn at runtime**
+
+```
+/spawn github
+```
+
+After spawning, any LLM agent in the room can call GitHub tools:
+
+```
+"Search for Python repos about multi-agent systems."
+"Create an issue titled 'Fix login' in owner/repo."
+"Read src/main.py from owner/repo on branch main."
+```
+
 ---
 
 ## 6. Verify the installation
@@ -185,7 +313,7 @@ Expected: check the output for the current test count.
 Then run the offline mock CLI to confirm the runtime spins up:
 
 ```bash
-python -m mars.cli.main --provider mock
+python -m mars.client.cli.main --provider mock
 ```
 
 Press `Ctrl-D` or type `/quit` to quit.
@@ -195,9 +323,9 @@ Press `Ctrl-D` or type `/quit` to quit.
 ## 7. First real conversation
 
 ```bash
-python -m mars.cli.main --provider ollama
+python -m mars.client.cli.main --provider ollama
 # or
-python -m mars.cli.main --provider anthropic
+python -m mars.client.cli.main --provider anthropic
 ```
 
 When the CLI is up, type any prompt at the input bar to chat with the default agent. Useful commands:
@@ -220,24 +348,24 @@ For multi-client setups, persistent agents, or sharing a single set of API keys 
 
 ```bash
 # Terminal 1 — headless server
-python -m mars.srv.main                            # uses defaults (no initial LLM agent)
-python -m mars.srv.main --provider ollama          # local Ollama (llama3.2, no API key)
-python -m mars.srv.main --provider ollama --model qwen2.5:7b  # different Ollama model
-python -m mars.srv.main --provider anthropic       # Anthropic Claude
-python -m mars.srv.main --password secret          # require a password from clients
+python -m mars.runtime.server.main                            # uses defaults (no initial LLM agent)
+python -m mars.runtime.server.main --provider ollama          # local Ollama (llama3.2, no API key)
+python -m mars.runtime.server.main --provider ollama --model qwen2.5:7b  # different Ollama model
+python -m mars.runtime.server.main --provider anthropic       # Anthropic Claude
+python -m mars.runtime.server.main --password secret          # require a password from clients
 ```
 
 > A `mars-server` console script is also installed by `pip install -e ".[dev]"` — use it instead if your Python `Scripts/` (Windows) / `bin/` (Linux/macOS) directory is on `PATH`. The `python -m …` form always works regardless of `PATH`.
 
-All free service agents auto-spawn from `mars/services/agents.ini` on start:
+All free service agents auto-spawn from `mars/runtime/agents/agents.ini` on start:
 
 | Agent | Skills | Requires |
 |-------|--------|----------|
 | `clock` | time, clock, location, geo, datetime | — |
 | `profiler` | profiler, profile, performance, memory, cpu | — |
 | `status` | status, protocol, introspection, runtime | — |
-| `math` | math, solve, equation, sympy, algebra, calculus, … | `.[science]` |
-| `scipy` | scipy, numerical, quadrature, rootfind, optimize, linalg, stats, … | `.[science]` |
+| `sympy` | math, solve, equation, sympy, algebra, calculus, … | — |
+| `scipy` | scipy, numerical, quadrature, rootfind, optimize, linalg, stats, … | — |
 | `file` | file, read, write, fileio, storage, filesystem, … | — |
 | `url` | url, fetch, http, web, get, post, download, … | — |
 | `ollama-models` | models, list-models, ollama-models, providers, tags | — |
@@ -255,10 +383,10 @@ Ports the server exposes:
 
 ```bash
 # Terminal 2 — connect a CLI client
-python -m mars.cli.main --remote                         # defaults to localhost:7432
-python -m mars.cli.main --remote localhost:7432          # explicit host:port
-python -m mars.cli.main --remote 192.168.1.10:7432       # remote server
-python -m mars.cli.main --remote localhost --password secret
+python -m mars.client.cli.main --remote                         # defaults to localhost:7432
+python -m mars.client.cli.main --remote localhost:7432          # explicit host:port
+python -m mars.client.cli.main --remote 192.168.1.10:7432       # remote server
+python -m mars.client.cli.main --remote localhost --password secret
 ```
 
 > The equivalent console-script form is `mars --remote …` (also installed by `pip install -e ".[dev]"`).
@@ -269,8 +397,12 @@ Once connected, every `/spawn`, `/scope`, and `/message` runs on the server; mul
 
 ## 9. Troubleshooting
 
+- **`/spawn github` fails with `No such file or directory`** — the `bin/github-mcp-server.exe` (Windows) or `bin/github-mcp-server` (Linux/macOS) binary is missing. Download it from [github-mcp-server releases](https://github.com/github/github-mcp-server/releases/latest) and place it in the `bin/` folder at the project root. See SETUP.md §5 for the exact steps.
+- **`/spawn github` fails with `GITHUB_PERSONAL_ACCESS_TOKEN not set`** — add `GITHUB_PERSONAL_ACCESS_TOKEN=<token>` to `.env`. Use `gh auth token` to get the value.
+- **`Copilot: no token found`** — no usable GitHub OAuth token was found. Run `gh auth login` (once) and ensure `gh` is on PATH. MARS picks up the token automatically via `gh auth token`.
+- **Personal Access Tokens (`ghp_…`) do not work** for Copilot — use `gh auth login` to get an OAuth (`gho_…`) token.
 - **`ModuleNotFoundError: No module named 'openai'`** — MARS only needs `httpx` (already a core dependency) — no extra provider SDKs required. Reinstall with `pip install -e ".[dev]"` if your environment is incomplete.
-- **`ModuleNotFoundError: No module named 'sympy'`** or **`No module named 'scipy'`** — the SymPy/SciPy math agents need the `science` extra: `pip install -e ".[science]"`.
+- **`ModuleNotFoundError: No module named 'sympy'`** or **`No module named 'scipy'`** — reinstall with `pip install -e ".[dev]"` to get all dependencies.
 - **Tests fail on import** — make sure you ran `pip install -e ".[dev]"` and are on Python 3.11+.
 - **`papers/` PDFs look corrupt** — run `git lfs pull`.
 - **Ollama `connection refused`** — Ollama server is not running; start it with `ollama serve` in a separate terminal.

@@ -44,53 +44,65 @@ python -m pytest tests/ -x -q
 
 Run `python -m pytest tests/ -x -q` and check the output for the current count.
 
-### Test files
+### Test structure
 
-**`tests/unit/`** — pure-Python, no I/O
+Tests mirror the source tree exactly. Run the full suite with:
 
-| File | What it covers |
+```bash
+python -m pytest tests/ -x -q
+```
+
+**`tests/unit/`** — pure-Python, no I/O, no network
+
+| Path | What it covers |
 |------|---------------|
-| `test_service_tool.py` | `_ServiceTool` name/description/parameters; launcher `_parse_spawn_request` |
-| `test_scope.py` | Scope creation and field validation |
-| `test_scope_store.py` | ScopeStore load / skill lookup |
-| `test_tui_scroll.py` | TUI scroll buffer |
-| `test_sidebar_agents.py` | Sidebar agent list rendering |
-| `test_ui_bugs.py` | UI edge-case regression tests |
-| `test_cli_utils.py` | CLI utility helpers |
-| `test_cli_models.py` | CLI model listing |
-| `test_cli_service_manager.py` | Service manager logic |
-| `test_artifacts.py` | Artifact store read/write |
-| `test_artifact_store_observer.py` | Artifact observer notifications |
-| `test_renderer_visual.py` | Renderer visual output |
-| `test_provider_registry.py` | Provider registry lookup |
-| `test_anthropic_provider_ext.py` | Anthropic provider extensions |
-| `test_anthropic_thinking.py` | Anthropic extended thinking |
-| `test_status_agent_unreachable.py` | Status agent when REST is unreachable |
+| `runtime/server/test_mcp_adapter.py` | MCPAdapter init, envelope constants |
+| `runtime/agents/test_status_agent.py` | Status agent when REST is unreachable |
+| `runtime/agents/test_launcher_agent.py` | Launcher `_parse_spawn_request` |
+| `runtime/services/test_mcp_server.py` | MCPServer tool dispatch, `_to_content`, protocol |
+| `runtime/services/test_service_utils.py` | Pure helpers: `parse_server`, `build_hello`, `encode_json_artifact`, `looks_like_base64`, etc. |
+| `runtime/services/test_registry.py` | `_ServiceTool` name/description/parameters |
+| `client/cli/test_tui_scroll.py` | TUI scroll buffer |
+| `client/cli/test_sidebar_agents.py` | Sidebar agent list rendering |
+| `client/cli/test_ui_bugs.py` | UI edge-case regression tests |
+| `client/cli/test_cli_utils.py` | CLI utility helpers |
+| `client/cli/test_cli_models.py` | CLI data models |
+| `client/cli/test_cli_service_manager.py` | Service manager logic |
+| `client/providers/test_provider_registry.py` | Provider registry lookup |
+| `client/providers/test_anthropic_provider_ext.py` | Anthropic provider extensions |
+| `client/providers/test_anthropic_thinking.py` | Anthropic extended thinking |
+| `storage/artifacts/test_artifacts.py` | Artifact store read/write |
+| `storage/artifacts/test_artifact_store_observer.py` | Artifact observer notifications |
+| `storage/artifacts/test_renderer_visual.py` | Renderer visual output |
+| `storage/scopes/test_scope.py` | Scope creation and field validation |
+| `storage/scopes/test_scope_store.py` | ScopeStore load / skill lookup |
 
-**`tests/component/`** — single component with fakes
+**`tests/component/`** — single component with lightweight fakes
 
-| File | What it covers |
+| Path | What it covers |
 |------|---------------|
-| (see directory) | Component-level tests with lightweight fakes |
+| `runtime/server/test_server.py` | Server message routing with fakes |
 
-**`tests/module/`** — multi-component module tests
+**`tests/module/`** — multi-component integration tests
 
-| File | What it covers |
+| Path | What it covers |
 |------|---------------|
-| `test_mcp_adapter.py` | MCPAdapter subprocess lifecycle and tool calls |
-| `test_providers.py` | MockProvider, base types, ToolSpec protocol |
-| `test_registry.py` | INI-driven agent registry parsing and auto-spawn |
-| `test_scopes.py` | Scope creation, store, domain contributions |
+| `runtime/server/test_mcp_adapter.py` | MCPAdapter subprocess lifecycle and tool calls |
+| `runtime/server/test_external_mcp_spawn.py` | External MCP server spawn + tool routing |
+| `runtime/services/test_registry.py` | INI-driven agent registry parsing and auto-spawn |
+| `client/providers/test_providers.py` | MockProvider, base types, ToolSpec protocol |
+| `storage/scopes/test_scopes.py` | Scope creation, store, domain contributions |
 
-**`tests/system/`** — end-to-end with real TCP server
+**`tests/system/`** — end-to-end with real TCP server and subprocesses
 
-| File | What it covers |
+| Path | What it covers |
 |------|---------------|
 | `test_llm_wire_agent.py` | LLM wire agent full round-trip |
-| `test_mcp_tool_call.py` | MCP tool call round-trip |
-| `test_anthropic_wire_agent.py` | Anthropic wire agent integration |
-| `test_copilot_wire_agent.py` | Copilot wire agent integration |
-| `test_ollama_wire_agent.py` | Ollama wire agent integration |
+| `test_mcp_tool_call.py` | Internal MCP tool call round-trip |
+| `test_external_mcp_tool_call.py` | External MCP server tool call end-to-end |
+| `test_anthropic_wire_agent.py` | Anthropic wire agent integration (needs key) |
+| `test_copilot_wire_agent.py` | Copilot wire agent integration (needs subscription) |
+| `test_ollama_wire_agent.py` | Ollama wire agent integration (needs local Ollama) |
 | `test_cli_startup.py` | CLI startup and server connection |
 
 ---
@@ -132,7 +144,7 @@ If this appears, reinstall the project dependencies with `pip install -e ".[dev]
 ### `asyncio.iscoroutinefunction` deprecation warning
 
 Python 3.14 changed this API. Safe to ignore — will be resolved in a future release.
-To suppress: `python -W ignore::DeprecationWarning -m mars.cli.main --provider mock`
+To suppress: `python -W ignore::DeprecationWarning -m mars.client.cli.main --provider mock`
 
 ### Tests fail on import
 

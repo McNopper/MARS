@@ -27,8 +27,8 @@ import time
 
 import pytest
 
-from mars.srv.main import MARSServer
-from mars.cli.models import MARSState
+from mars.runtime.server.main import MARSServer
+from mars.client.cli.models import MARSState
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ async def _read_any(reader, *, timeout: float = 15.0) -> list[dict]:
 
 def _spawn_llm_agent(port: int, provider: str = "mock-tool", extra_args: list[str] | None = None) -> subprocess.Popen:
     cmd = [
-        sys.executable, "-m", "mars.services.llm_wire_agent",
+        sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
         "--server", f"127.0.0.1:{port}",
         "--provider", provider,
     ] + (extra_args or [])

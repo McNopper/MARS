@@ -1,26 +1,33 @@
 """Root pytest configuration.
 
-Sound tests (marked with @pytest.mark.sound) are skipped by default.
-Run them explicitly with:  pytest --run-sound
-or set the environment variable:  RUN_SOUND_TESTS=1
+Automatically loads `.env` from the repository root (if present) before any
+test module is imported.  This makes ``GITHUB_TOKEN``, ``ANTHROPIC_API_KEY``,
+etc. available to skip-condition checks (e.g. ``_copilot_available()``) without
+requiring python-dotenv as a dependency.
 """
+from __future__ import annotations
+
 import os
-import pytest
+import pathlib
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
-        "--run-sound",
-        action="store_true",
-        default=False,
-        help="Run tests that produce actual audio output (skipped by default).",
-    )
+def _load_dotenv(path: pathlib.Path) -> None:
+    """Parse a .env file and populate os.environ for any key not already set."""
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        # Strip optional surrounding quotes
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    run_sound = config.getoption("--run-sound") or os.environ.get("RUN_SOUND_TESTS", "").lower() in ("1", "true", "yes")
-    if not run_sound:
-        skip_sound = pytest.mark.skip(reason="Audio output test — run with --run-sound or RUN_SOUND_TESTS=1")
-        for item in items:
-            if item.get_closest_marker("sound"):
-                item.add_marker(skip_sound)
+# Load once at collection time — before any module-level skip conditions run.
+_load_dotenv(pathlib.Path(__file__).parent / ".env")

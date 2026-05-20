@@ -18,8 +18,8 @@ import time
 
 import pytest
 
-from mars.srv.main import MARSServer
-from mars.cli.models import MARSState
+from mars.runtime.server.main import MARSServer
+from mars.client.cli.models import MARSState
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ async def test_anthropic_wire_agent_registers(unused_tcp_port):
     await _read_until(h_reader, t="welcome", timeout=5.0)
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "anthropic"],
         stdout=subprocess.DEVNULL,
@@ -110,7 +110,7 @@ async def test_anthropic_wire_agent_chat(unused_tcp_port):
     await _read_until(h_reader, t="welcome", timeout=5.0)
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mars.services.llm_wire_agent",
+        [sys.executable, "-m", "mars.runtime.services.llm_wire_agent",
          "--server", f"127.0.0.1:{unused_tcp_port}",
          "--provider", "anthropic",
          "--model", "claude-haiku-4-5"],

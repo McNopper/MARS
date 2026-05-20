@@ -26,7 +26,7 @@ Concepts used in MARS:
 `papers/Agent-Based_Counterparty_Matching_in_Agent-Based_Trading.pdf`
 
 Concepts used in MARS:
-- Two-level directory hierarchy: Domain Directory (DIDF) / Global Directory (DSDF) (→ skill-routing index in `mars/srv/`)
+- Two-level directory hierarchy: Domain Directory (DIDF) / Global Directory (DSDF) (→ skill-routing index in `mars/runtime/server/`)
 - Specialist agents operating over a shared runtime platform
 
 ### [3] EMIKA – System Architecture and Prototypic Realization
@@ -97,4 +97,4 @@ MARS provides adapter code to connect to external LLM APIs. Use of these service
 
 ## Artifact Exchange
 
-MARS supports inter-agent artifact exchange (binary files, archives, etc.). Artifacts are stored in-process in the `ArtifactStore` (`mars/artifacts/`). No artifact data is transmitted to external services unless an `LLMAgent` explicitly sends artifact content to an LLM API as part of a conversation. Users are responsible for ensuring that artifact content complies with applicable provider Terms of Service when including it in LLM prompts.
+MARS supports inter-agent artifact exchange (binary files, archives, etc.). Artifacts are stored in-process in the `ArtifactStore` (`mars/storage/artifacts/`). No artifact data is transmitted to external services unless an `LLMAgent` explicitly sends artifact content to an LLM API as part of a conversation. Users are responsible for ensuring that artifact content complies with applicable provider Terms of Service when including it in LLM prompts.

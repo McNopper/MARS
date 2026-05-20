@@ -15,10 +15,11 @@ connects to it via TCP. All agents, service agents, and state live in that subpr
 is a thin TCP client.
 
 ```bash
-python -m mars.cli.main                                   # interactive; pick provider with /spawn
-python -m mars.cli.main --provider mock                   # offline test agent, no key needed
-python -m mars.cli.main --provider ollama                 # local Ollama — no API key, no limits 🦙
-python -m mars.cli.main --provider anthropic --model claude-sonnet-4-6  # Anthropic Claude (needs ANTHROPIC_API_KEY / ANTHROPIC_KEY, or --key)
+python -m mars.client.cli.main                                   # interactive; pick provider with /spawn
+python -m mars.client.cli.main --provider mock                   # offline test agent, no key needed
+python -m mars.client.cli.main --provider ollama                 # local Ollama — no API key, no limits 🦙
+python -m mars.client.cli.main --provider copilot                # GitHub Copilot (needs gh auth login)
+python -m mars.client.cli.main --provider anthropic --model claude-sonnet-4-6  # Anthropic Claude (needs ANTHROPIC_API_KEY / ANTHROPIC_KEY, or --key)
 ```
 
 ### Remote client (connect to an already-running server)
@@ -28,14 +29,14 @@ just a terminal.
 
 ```bash
 # In another terminal first, start the server:
-python -m mars.srv.main                            # echo bots only
-python -m mars.srv.main --provider ollama          # + local llama3.2 (unlimited, no key) 🦙
+python -m mars.runtime.server.main                            # echo bots only
+python -m mars.runtime.server.main --provider ollama          # + local llama3.2 (unlimited, no key) 🦙
 
 # Then connect from one or more CLI clients:
-python -m mars.cli.main --remote                         # defaults to localhost:7432
-python -m mars.cli.main --remote localhost:7432          # explicit host:port
-python -m mars.cli.main --remote 192.168.1.10:7432       # remote server
-python -m mars.cli.main --remote localhost --password secret
+python -m mars.client.cli.main --remote                         # defaults to localhost:7432
+python -m mars.client.cli.main --remote localhost:7432          # explicit host:port
+python -m mars.client.cli.main --remote 192.168.1.10:7432       # remote server
+python -m mars.client.cli.main --remote localhost --password secret
 ```
 
 The CLI opens with three panels: the **agent list**, the **conversation log**, and the **capability board** (service agents and their skills).
@@ -70,6 +71,7 @@ The focused panel is highlighted with a **yellow** border. Moving the cursor in 
 /spawn copilot gpt-4o            # any registered provider + optional model
 /spawn profiler                  # built-in service agent
 /spawn status                    # built-in service agent
+/spawn github                    # GitHub MCP server — needs GITHUB_TOKEN in .env and Docker or Node
 
 # Role, goal, and behaviour flags (CrewAI / BDI conventions)
 /spawn ollama --role "Code Reviewer" --goal "Review pull requests for quality and correctness"
@@ -78,7 +80,7 @@ The focused panel is highlighted with a **yellow** border. Moving the cursor in 
 
 Reactive agents show a `⚡` badge in the sidebar and room member list. Proactive agents show `⏰` and emit periodic tick status events into their rooms.
 
-`/providers` lists every registered backend; `/models <provider>` lists models for one. `/agents available` lists every spawnnable service agent from `mars/services/agents.ini`.
+`/providers` lists every registered backend; `/models <provider>` lists models for one. `/agents available` lists every spawnnable service agent from `mars/runtime/agents/agents.ini`.
 
 ## Autopilot agents
 
@@ -263,8 +265,8 @@ with an emoji message in the chat pane — **no crash, no silent hang**:
 **To avoid rate limits entirely**, use Ollama — completely free, runs locally, no quotas:
 
 ```bash
-python -m mars.srv.main --provider ollama   # server mode
-python -m mars.cli.main --provider ollama   # standalone
+python -m mars.runtime.server.main --provider ollama   # server mode
+python -m mars.client.cli.main --provider ollama   # standalone
 ```
 
 See [SETUP.md](SETUP.md) for the full Ollama install guide.

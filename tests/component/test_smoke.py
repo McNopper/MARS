@@ -3,7 +3,7 @@ in server *and* client startup.  These tests catch NameErrors, missing imports,
 and broken module-level code *before* a human tries to start either process.
 
 The pattern mirrors the failure that occurred with ``Path`` not being imported
-in ``mars.srv.main`` — a bug that only surfaces at runtime when ``_async_server``
+in ``mars.runtime.server.main`` — a bug that only surfaces at runtime when ``_async_server``
 is called, not at import time.  Each test here exercises the relevant code path
 in isolation so the CI suite catches it first.
 """
@@ -21,20 +21,20 @@ from pathlib import Path
 
 
 def test_srv_main_imports():
-    """mars.srv.main must import without errors."""
-    module = importlib.import_module("mars.srv.main")
+    """mars.runtime.server.main must import without errors."""
+    module = importlib.import_module("mars.runtime.server.main")
     assert module is not None
 
 
 def test_cli_main_imports():
-    """mars.cli.main must import without errors."""
-    module = importlib.import_module("mars.cli.main")
+    """mars.client.cli.main must import without errors."""
+    module = importlib.import_module("mars.client.cli.main")
     assert module is not None
 
 
 def test_scope_store_imports():
-    """mars.scopes.store must import without errors."""
-    module = importlib.import_module("mars.scopes.store")
+    """mars.storage.scopes.store must import without errors."""
+    module = importlib.import_module("mars.storage.scopes.store")
     assert module is not None
 
 
@@ -45,8 +45,8 @@ def test_scope_store_imports():
 
 def test_scope_store_instantiation(tmp_path: Path):
     """ScopeStore(Path(...)) must not raise — this is the exact line that
-    failed in mars.srv.main when ``Path`` was not imported."""
-    from mars.scopes.store import ScopeStore
+    failed in mars.runtime.server.main when ``Path`` was not imported."""
+    from mars.storage.scopes.store import ScopeStore
 
     store = ScopeStore(tmp_path)
     assert store is not None
@@ -55,7 +55,7 @@ def test_scope_store_instantiation(tmp_path: Path):
 def test_scope_store_load_all_empty(tmp_path: Path):
     """ScopeStore.load_all() on an empty directory must return an empty list
     without raising."""
-    from mars.scopes.store import ScopeStore
+    from mars.storage.scopes.store import ScopeStore
 
     store = ScopeStore(tmp_path)
     scopes = store.load_all()
@@ -65,7 +65,7 @@ def test_scope_store_load_all_empty(tmp_path: Path):
 def test_scope_store_load_all_real():
     """ScopeStore.load_all() on the real scopes/ directory must not raise,
     even when the directory is missing or empty."""
-    from mars.scopes.store import ScopeStore
+    from mars.storage.scopes.store import ScopeStore
 
     store = ScopeStore(Path("scopes"))
     scopes = store.load_all()
@@ -74,7 +74,7 @@ def test_scope_store_load_all_real():
 
 def test_mars_state_instantiation():
     """MARSState must be constructable without a live Platform."""
-    from mars.cli.main import MARSState
+    from mars.client.cli.main import MARSState
 
     state = MARSState(platform_name="smoke-test")
     assert state is not None
@@ -82,7 +82,7 @@ def test_mars_state_instantiation():
 
 def test_mars_state_scroll_fields():
     """MARSState must have scroll, cursor, and panel_focus fields for TUI scrolling."""
-    from mars.cli.main import MARSState
+    from mars.client.cli.main import MARSState
 
     s = MARSState()
     assert s.panel_focus == "chat"
@@ -93,7 +93,7 @@ def test_mars_state_scroll_fields():
 
 def test_agent_record_instantiation():
     """AgentRecord must be constructable with required fields."""
-    from mars.cli.main import AgentRecord
+    from mars.client.cli.main import AgentRecord
 
     rec = AgentRecord(
         agent_id="smoke-agent",
@@ -107,13 +107,13 @@ def test_agent_record_instantiation():
 
 
 def test_srv_main_has_path_import():
-    """Verify that 'Path' is resolvable inside mars.srv.main — the specific
+    """Verify that 'Path' is resolvable inside mars.runtime.server.main — the specific
     symbol that was missing and caused the production server crash."""
-    import mars.srv.main as srv_main
+    import mars.runtime.server.main as srv_main
 
     # The module must expose Path via its globals (imported at module level)
     assert "Path" in vars(srv_main), (
-        "mars.srv.main is missing 'from pathlib import Path' — "
+        "mars.runtime.server.main is missing 'from pathlib import Path' — "
         "server startup will crash at ScopeStore(Path('scopes'))"
     )
 
@@ -124,11 +124,11 @@ def test_srv_main_has_path_import():
 
 
 def test_cli_main_has_default_port():
-    """DEFAULT_PORT must be defined in mars.cli.main — used by _async_client."""
-    cli_main = importlib.import_module("mars.cli.main")
+    """DEFAULT_PORT must be defined in mars.client.cli.main — used by _async_client."""
+    cli_main = importlib.import_module("mars.client.cli.main")
 
     assert hasattr(cli_main, "DEFAULT_PORT"), (
-        "mars.cli.main is missing DEFAULT_PORT — _async_client will crash"
+        "mars.client.cli.main is missing DEFAULT_PORT — _async_client will crash"
     )
     assert isinstance(cli_main.DEFAULT_PORT, int)
 
@@ -138,7 +138,7 @@ def test_mars_client_terminal_instantiation():
     this is the first thing _async_client does after a successful TCP connect."""
     import asyncio
     from unittest.mock import MagicMock
-    from mars.cli.main import MARSClientTerminal, MARSState, AgentRecord
+    from mars.client.cli.main import MARSClientTerminal, MARSState, AgentRecord
 
     state = MARSState()
     state.agents["cli-user@1"] = AgentRecord(
@@ -165,7 +165,7 @@ def test_mars_client_terminal_apply_event_state():
     state dump to the connecting client."""
     import asyncio
     from unittest.mock import MagicMock
-    from mars.cli.main import MARSClientTerminal, MARSState
+    from mars.client.cli.main import MARSClientTerminal, MARSState
 
     state = MARSState()
     reader = MagicMock(spec=asyncio.StreamReader)
@@ -195,7 +195,7 @@ def test_mars_client_terminal_apply_event_spawn():
     """MARSClientTerminal._apply_event must handle a 'spawn' event."""
     import asyncio
     from unittest.mock import MagicMock
-    from mars.cli.main import MARSClientTerminal, MARSState
+    from mars.client.cli.main import MARSClientTerminal, MARSState
 
     state = MARSState()
     reader = MagicMock(spec=asyncio.StreamReader)
@@ -218,7 +218,7 @@ def test_mars_client_terminal_apply_event_despawn():
     """MARSClientTerminal._apply_event must handle a 'despawn' event."""
     import asyncio
     from unittest.mock import MagicMock
-    from mars.cli.main import MARSClientTerminal, MARSState, AgentRecord
+    from mars.client.cli.main import MARSClientTerminal, MARSState, AgentRecord
 
     state = MARSState()
     state.agents["temp-agent"] = AgentRecord(
@@ -235,18 +235,18 @@ def test_mars_client_terminal_apply_event_despawn():
 
 
 def test_cli_main_has_mars_client_terminal():
-    """MARSClientTerminal must be exported from mars.cli.main."""
-    cli_main = importlib.import_module("mars.cli.main")
+    """MARSClientTerminal must be exported from mars.client.cli.main."""
+    cli_main = importlib.import_module("mars.client.cli.main")
 
     assert hasattr(cli_main, "MARSClientTerminal"), (
-        "mars.cli.main is missing MARSClientTerminal class"
+        "mars.client.cli.main is missing MARSClientTerminal class"
     )
 
 
 
 def test_cli_main_renderer_instantiation():
     """MARSRenderer must be constructable from a fresh MARSState."""
-    from mars.cli.main import MARSRenderer, MARSState
+    from mars.client.cli.main import MARSRenderer, MARSState
 
     state = MARSState()
     renderer = MARSRenderer(state)
