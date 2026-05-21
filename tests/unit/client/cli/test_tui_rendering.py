@@ -233,7 +233,7 @@ class TestHumanInSidebar:
         assert "cli-user@1" in output
 
     def test_human_not_shown_as_service_agent(self):
-        """Human must appear in the conversational section, not the services section."""
+        """Human must appear in the agents panel; service agent must go to MCP panel."""
         state = _make_state()
         state.my_agent_id = "cli-user@1"
         state.agents["cli-user@1"] = AgentRecord(
@@ -253,13 +253,17 @@ class TestHumanInSidebar:
 
         renderer = MARSRenderer(state)
         from rich.console import Console
-        buf = StringIO()
-        console = Console(file=buf, force_terminal=True, width=80, color_system=None)
-        console.print(renderer.render_sidebar())
-        output = buf.getvalue()
+        buf_sidebar = StringIO()
+        buf_mcp = StringIO()
+        console_s = Console(file=buf_sidebar, force_terminal=True, width=80, color_system=None)
+        console_m = Console(file=buf_mcp, force_terminal=True, width=80, color_system=None)
+        console_s.print(renderer.render_sidebar())
+        console_m.print(renderer.render_mcp_panel())
+        sidebar_output = buf_sidebar.getvalue()
+        mcp_output = buf_mcp.getvalue()
 
-        # 🙂 must appear BEFORE the "services" divider
-        home_pos = output.find("🙂")
-        svc_pos = output.find("services")
-        assert home_pos != -1 and svc_pos != -1
-        assert home_pos < svc_pos, "Human must appear above the services divider"
+        # Human must appear in the agents sidebar
+        assert "cli-user@1" in sidebar_output, "Human must appear in agents sidebar"
+        # Service agent must appear in MCP panel, not the agents sidebar
+        assert "svc.clock@1" in mcp_output, "Service agent must appear in MCP panel"
+        assert "svc.clock@1" not in sidebar_output, "Service agent must NOT be in agents sidebar"

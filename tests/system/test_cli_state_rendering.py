@@ -107,12 +107,12 @@ class TestSpawnEventRendering:
         term._apply_event(spawn_ev)
 
         agent_id = spawn_ev["agent_id"]
-        assert state.current_agent == agent_id, (
-            "First spawned LLM agent must become current_agent automatically"
+        assert state.current_room == agent_id, (
+            "First spawned LLM agent must become current_room automatically"
         )
         writer.close()
 
-    async def test_service_agent_appears_in_services_section(self, unused_tcp_port):
+    async def test_service_agent_appears_in_mcp_panel(self, unused_tcp_port):
         server = await helpers.start_server(unused_tcp_port)  # noqa: F841
         reader, writer = await helpers.connect(unused_tcp_port, "cli-user")
 
@@ -132,11 +132,12 @@ class TestSpawnEventRendering:
         })
 
         renderer = MARSRenderer(state)
-        output = _render(renderer, "render_sidebar")
+        mcp_output = _render(renderer, "render_mcp_panel")
+        sidebar_output = _render(renderer, "render_sidebar")
 
-        # Service agents appear below the "services" divider
-        assert "services" in output, "Services section must appear in sidebar"
-        assert "svc.clock@1" in output
+        # Service agents appear in the dedicated MCP panel, not the agents sidebar
+        assert "svc.clock@1" in mcp_output, "Service agent must appear in MCP panel"
+        assert "svc.clock@1" not in sidebar_output, "Service agent must NOT appear in agents sidebar"
         writer.close()
 
 
@@ -273,7 +274,7 @@ class TestChatRendering:
             "t": "spawn", "agent_id": "svc.test@1",
             "agent_type": "ServiceAgent", "domain": "services",
         })
-        state.current_agent = "svc.test@1"
+        state.current_room = "svc.test@1"
 
         term._apply_event({
             "t": "chat", "agent_id": "svc.test@1",

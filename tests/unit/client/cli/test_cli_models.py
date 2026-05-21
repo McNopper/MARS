@@ -11,6 +11,9 @@ from mars.client.cli.models import (
     FeedItem,
     MARSState,
     _is_conversational,
+    _mcp_agent_ids,
+    _nav_connections,
+    _nav_mcp,
     _nav_sidebar,
     _sidebar_agent_ids,
     _sync_sidebar_cursor,
@@ -105,7 +108,7 @@ class TestMARSState:
     def test_empty_on_creation(self) -> None:
         state = MARSState()
         assert state.agents == {}
-        assert state.current_agent is None
+        assert state.current_room is None
         assert len(state.feed) == 0
 
     def test_add_event_appends_to_feed(self) -> None:
@@ -241,11 +244,11 @@ class TestNavSidebar:
         n = len(_sidebar_agent_ids(state))
         assert state.sidebar_cursor == n - 1
 
-    def test_nav_sets_current_agent(self) -> None:
+    def test_nav_leaves_current_room_unchanged(self) -> None:
         state = self._state_with_agents()
+        state.current_room = "bot.1"
         _nav_sidebar(state, 1)
-        ids = _sidebar_agent_ids(state)
-        assert state.current_agent == ids[1]
+        assert state.current_room == "bot.1"
 
     def test_nav_marks_is_current(self) -> None:
         state = self._state_with_agents()
@@ -267,22 +270,115 @@ class TestNavSidebar:
 # ---------------------------------------------------------------------------
 
 
+class TestConnectionsNav:
+    def test_nav_sets_current_room(self) -> None:
+        state = MARSState()
+        state.rooms = {"alpha": {"a"}, "beta": {"b"}}
+        _nav_connections(state, 1)
+        assert state.current_room == "beta"
+        assert state.connections_cursor == 1
+
+
 class TestSyncSidebarCursor:
-    def test_sync_sets_cursor_to_current_agent(self) -> None:
+    def test_sync_sets_cursor_to_current_room(self) -> None:
         state = MARSState()
         for i in range(1, 4):
             state.agents[f"bot.{i}"] = AgentRecord(
                 agent_id=f"bot.{i}", agent_type="LLMAgent"
             )
         ids = _sidebar_agent_ids(state)
-        state.current_agent = ids[2]
+        state.current_room = ids[2]
         state.sidebar_cursor = 0
         _sync_sidebar_cursor(state)
         assert state.sidebar_cursor == 2
 
     def test_sync_no_match_leaves_cursor_unchanged(self) -> None:
         state = MARSState()
-        state.current_agent = "ghost.1"
+        state.current_room = "ghost.1"
         state.sidebar_cursor = 5
         _sync_sidebar_cursor(state)
         assert state.sidebar_cursor == 5
+
+
+# ---------------------------------------------------------------------------
+# _mcp_agent_ids
+# ---------------------------------------------------------------------------
+
+
+class TestMCPAgentIds:
+    def test_returns_only_service_agents(self) -> None:
+        state = MARSState()
+        state.agents["llm.1"] = AgentRecord(agent_id="llm.1", agent_type="LLMAgent")
+        state.agents["svc.1"] = AgentRecord(agent_id="svc.1", agent_type="ServiceAgent")
+        ids = _mcp_agent_ids(state)
+        assert "svc.1" in ids
+        assert "llm.1" not in ids
+
+    def test_excludes_echo_bots(self) -> None:
+        state = MARSState()
+        state.agents["echo-text"] = AgentRecord(agent_id="echo-text", agent_type="EchoBot")
+        state.agents["svc.1"] = AgentRecord(agent_id="svc.1", agent_type="ServiceAgent")
+        ids = _mcp_agent_ids(state)
+        assert "echo-text" not in ids
+        assert "svc.1" in ids
+
+    def test_returns_sorted(self) -> None:
+        state = MARSState()
+        state.agents["svc.z"] = AgentRecord(agent_id="svc.z", agent_type="ServiceAgent")
+        state.agents["svc.a"] = AgentRecord(agent_id="svc.a", agent_type="ServiceAgent")
+        ids = _mcp_agent_ids(state)
+        assert ids == sorted(ids)
+
+    def test_empty_state_returns_empty(self) -> None:
+        assert _mcp_agent_ids(MARSState()) == []
+
+
+# ---------------------------------------------------------------------------
+# _nav_mcp
+# ---------------------------------------------------------------------------
+
+
+class TestNavMCP:
+    def _state_with_services(self) -> MARSState:
+        state = MARSState()
+        for name in ["svc.alpha", "svc.beta", "svc.gamma"]:
+            state.agents[name] = AgentRecord(agent_id=name, agent_type="ServiceAgent")
+        state.mcp_cursor = 0
+        state.mcp_scroll = 0
+        state.mcp_visible_height = 10
+        return state
+
+    def test_nav_down_moves_cursor(self) -> None:
+        state = self._state_with_services()
+        _nav_mcp(state, 1)
+        assert state.mcp_cursor == 1
+
+    def test_nav_up_clamps_at_zero(self) -> None:
+        state = self._state_with_services()
+        _nav_mcp(state, -5)
+        assert state.mcp_cursor == 0
+
+    def test_nav_down_clamps_at_last(self) -> None:
+        state = self._state_with_services()
+        _nav_mcp(state, 100)
+        ids = _mcp_agent_ids(state)
+        assert state.mcp_cursor == len(ids) - 1
+
+    def test_scroll_follows_cursor_down(self) -> None:
+        state = self._state_with_services()
+        state.mcp_visible_height = 2   # only 2 visible at a time
+        state.mcp_cursor = 0
+        _nav_mcp(state, 2)             # cursor → 2, beyond window
+        assert state.mcp_scroll >= 1  # scroll must have advanced
+
+    def test_scroll_follows_cursor_up(self) -> None:
+        state = self._state_with_services()
+        state.mcp_visible_height = 2
+        state.mcp_cursor = 2
+        state.mcp_scroll = 2
+        _nav_mcp(state, -2)            # cursor → 0, before window
+        assert state.mcp_scroll == 0
+
+    def test_nav_empty_state_is_noop(self) -> None:
+        state = MARSState()
+        _nav_mcp(state, 1)             # Should not raise

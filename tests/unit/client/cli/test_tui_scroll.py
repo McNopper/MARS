@@ -3,13 +3,13 @@ Unit tests for TUI scroll and sidebar cursor navigation logic.
 
 Tests cover:
 - chat_scroll increments/decrements on ↑/↓ key when focus == "chat"
-- sidebar focus: arrow keys move cursor via _nav_sidebar (auto-switches agent)
+- sidebar focus: arrow keys move cursor via _nav_sidebar without switching rooms
 - scroll clamps at 0
 - panel_focus routing (only focused panel scrolls)
 - scroll reset to 0 on panel switch simulation
 - PgUp/PgDn scancodes ('I','Q') are ignored
-- _nav_sidebar clamping and agent switching
-- _sync_sidebar_cursor: syncs cursor to current_agent position
+- _nav_sidebar clamping and informational agent highlighting
+- _sync_sidebar_cursor: syncs cursor to current_room position
 """
 import pytest
 from mars.client.cli.main import _nav_sidebar, _sync_sidebar_cursor
@@ -26,7 +26,7 @@ class _FakeState:
         self.sidebar_cursor: int = 0
         self.sidebar_visible_height: int = 20
         self.panel_focus: str = "chat"
-        self.current_agent: str = ""
+        self.current_room: str = ""
         self.chat_scroll: int = 0
         self.agents: dict = {}
         self.rooms: dict = {}
@@ -37,7 +37,7 @@ def _make_state_with_agents(agent_ids: list[str], current: str = "") -> _FakeSta
     from types import SimpleNamespace
     s = _FakeState()
     s.agents = {aid: SimpleNamespace(is_current=(aid == current)) for aid in agent_ids}
-    s.current_agent = current or (agent_ids[0] if agent_ids else "")
+    s.current_room = current or (agent_ids[0] if agent_ids else "")
     return s
 
 
@@ -121,7 +121,7 @@ class TestWindowsScrollKey:
         s.sidebar_cursor = 1
         _apply_scroll_key(s, 'H')
         assert s.sidebar_cursor == 0
-        assert s.current_agent == "a"
+        assert s.current_room == "b"
 
     def test_sidebar_down_moves_cursor(self):
         s = _make_state_with_agents(["a", "b", "c"], current="a")
@@ -129,7 +129,7 @@ class TestWindowsScrollKey:
         s.sidebar_cursor = 0
         _apply_scroll_key(s, 'P')
         assert s.sidebar_cursor == 1
-        assert s.current_agent == "b"
+        assert s.current_room == "a"
 
     def test_only_chat_scrolls_when_focus_chat(self):
         s = _make_state_with_agents(["a", "b"], current="a")
@@ -201,7 +201,7 @@ class TestUnixScrollKey:
         s.sidebar_cursor = 1
         _apply_unix_scroll(s, 'A')
         assert s.sidebar_cursor == 0
-        assert s.current_agent == "a"
+        assert s.current_room == "b"
 
     def test_B_sidebar_moves_cursor_down(self):
         s = _make_state_with_agents(["a", "b", "c"], current="a")
@@ -209,7 +209,7 @@ class TestUnixScrollKey:
         s.sidebar_cursor = 0
         _apply_unix_scroll(s, 'B')
         assert s.sidebar_cursor == 1
-        assert s.current_agent == "b"
+        assert s.current_room == "a"
 
     def test_unknown_escape_char_is_ignored(self):
         s = _FakeState()
@@ -226,34 +226,34 @@ class TestNavSidebar:
         s = _make_state_with_agents(["a", "b", "c"], current="a")
         _nav_sidebar(s, +1)
         assert s.sidebar_cursor == 1
-        assert s.current_agent == "b"
+        assert s.current_room == "a"
 
     def test_nav_up_moves_cursor(self):
         s = _make_state_with_agents(["a", "b", "c"], current="c")
         s.sidebar_cursor = 2
         _nav_sidebar(s, -1)
         assert s.sidebar_cursor == 1
-        assert s.current_agent == "b"
+        assert s.current_room == "c"
 
     def test_nav_clamps_at_top(self):
         s = _make_state_with_agents(["a", "b"], current="a")
         s.sidebar_cursor = 0
         _nav_sidebar(s, -1)
         assert s.sidebar_cursor == 0
-        assert s.current_agent == "a"
+        assert s.current_room == "a"
 
     def test_nav_clamps_at_bottom(self):
         s = _make_state_with_agents(["a", "b"], current="b")
         s.sidebar_cursor = 1
         _nav_sidebar(s, +1)
         assert s.sidebar_cursor == 1
-        assert s.current_agent == "b"
+        assert s.current_room == "b"
 
-    def test_nav_resets_chat_scroll(self):
+    def test_nav_keeps_chat_scroll(self):
         s = _make_state_with_agents(["a", "b"], current="a")
         s.chat_scroll = 5
         _nav_sidebar(s, +1)
-        assert s.chat_scroll == 0
+        assert s.chat_scroll == 5
 
     def test_nav_switches_is_current_flag(self):
         s = _make_state_with_agents(["a", "b", "c"], current="a")
@@ -274,7 +274,7 @@ class TestNavSidebar:
 # ======================================================
 
 class TestSyncSidebarCursor:
-    def test_sync_sets_cursor_to_current_agent(self):
+    def test_sync_sets_cursor_to_current_room(self):
         s = _make_state_with_agents(["a", "b", "c"], current="b")
         s.sidebar_cursor = 0  # out of sync
         _sync_sidebar_cursor(s)
@@ -294,7 +294,7 @@ class TestSyncSidebarCursor:
 
     def test_sync_unknown_agent_no_change(self):
         s = _make_state_with_agents(["a", "b"], current="a")
-        s.current_agent = "unknown"
+        s.current_room = "unknown"
         s.sidebar_cursor = 0
         _sync_sidebar_cursor(s)
         assert s.sidebar_cursor == 0  # unchanged
@@ -316,9 +316,8 @@ class TestScrollReset:
         """sidebar_scroll is independent of chat_scroll."""
         s = _make_state_with_agents(["a", "b"], current="a")
         s.chat_scroll = 3
-        # nav sidebar resets chat_scroll to 0 (simulates switching agent)
         _nav_sidebar(s, +1)
-        assert s.chat_scroll == 0
+        assert s.chat_scroll == 3
         assert s.sidebar_cursor == 1
 
 

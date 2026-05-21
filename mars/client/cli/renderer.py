@@ -9,6 +9,7 @@ from mars.client.cli.models import (
     MARSState, AgentRecord, ChatMessage, FeedItem,
     AGENT_EMOJIS, EVENT_ICONS, HUMAN_AVATARS,
     _sidebar_agent_ids, _is_conversational, _CONVERSATIONAL_TYPES,
+    _mcp_agent_ids,
 )
 from mars.client.cli.utils import _time_ago
 
@@ -24,6 +25,12 @@ try:
 except ImportError:
     _RICH = False
     Console = None  # type: ignore[misc,assignment]
+
+try:
+    from mars.client.cli.math_renderer import preprocess_math as _preprocess_math
+except Exception:
+    def _preprocess_math(content: str) -> str:  # type: ignore[misc]
+        return content
 
 class MARSRenderer:
     def __init__(self, state: MARSState) -> None:
@@ -53,14 +60,11 @@ class MARSRenderer:
     _PINNED_AGENTS: tuple = ()  # echo bots no longer shown in sidebar
 
     def render_sidebar(self, height: int | None = None) -> Panel:
+        """Top-left panel: conversational agents (LLM, human, bridge)."""
         s = self._s
         text = Text()
         nav_ids = _sidebar_agent_ids(s)  # conversational only — used for cursor indexing
         conv_agents = [(aid, s.agents[aid]) for aid in nav_ids if aid in s.agents]
-        svc_agents = [
-            (aid, rec) for aid, rec in sorted(s.agents.items())
-            if not _is_conversational(rec) and rec.agent_type != "EchoBot"
-        ]
         nav_total = len(nav_ids)
         scroll = max(0, min(s.sidebar_scroll, max(0, nav_total - 1)))
         s.sidebar_scroll = scroll
@@ -71,33 +75,25 @@ class MARSRenderer:
         s.sidebar_cursor = max(0, min(s.sidebar_cursor, max(0, nav_total - 1)))
         # one spinner frame for all THINKING agents in this render pass
         _spin = self._THINKING_SPINNER[int(time.monotonic() * 8) % len(self._THINKING_SPINNER)]
-        def _render_row(idx: int, aid: str, rec: "AgentRecord", *, dim: bool = False) -> None:
-            is_cursor = (idx == s.sidebar_cursor) and not dim
+
+        def _render_row(idx: int, aid: str, rec: "AgentRecord") -> None:
+            is_cursor = (idx == s.sidebar_cursor)
             is_error = rec.fsm_state in ("ERROR", "CRASHED", "FAILED", "BLOCKED")
-            is_self = (aid == s.my_agent_id)
             emoji = "⚠️" if is_error else s.emoji(aid)
             is_thinking = rec.fsm_state == "THINKING"
             dot_color = (
-                "red"    if is_error
-                else "blue"   if is_thinking
-                else "green"  if rec.fsm_state in ("IDLE", "WAITING", "—", "")
+                "red"   if is_error
+                else "blue"  if is_thinking
+                else "green" if rec.fsm_state in ("IDLE", "WAITING", "—", "")
                 else "grey50"
             )
-            label_style = "dim" if dim else ("bold yellow" if rec.is_current else "white")
-            if is_cursor and s.panel_focus == "sidebar":
-                text.append("►", style="bold cyan")
-            else:
-                text.append(" ")
-            if is_thinking:
-                text.append(_spin, style="bold blue")
-            else:
-                text.append("●", style=dot_color)
+            label_style = "bold yellow" if rec.is_current else "white"
+            text.append("►" if (is_cursor and s.panel_focus == "sidebar") else " ", style="bold cyan" if (is_cursor and s.panel_focus == "sidebar") else "")
+            text.append(_spin if is_thinking else "●", style="bold blue" if is_thinking else dot_color)
             text.append(f" {emoji} ")
             text.append(aid, style=label_style)
-            if not dim:
-                if rec.model:
-                    short_model = rec.model.split("/")[-1][:14]
-                    text.append(f"  {short_model}", style="dim")
+            if rec.model:
+                text.append(f"  {rec.model.split('/')[-1][:14]}", style="dim")
             text.append("\n")
 
         for idx, (aid, rec) in enumerate(conv_agents):
@@ -105,24 +101,17 @@ class MARSRenderer:
                 continue
             _render_row(idx, aid, rec)
 
-        if svc_agents:
-            text.append(" ─ services ─\n", style="dim")
-            for aid, rec in svc_agents:
-                _render_row(-1, aid, rec, dim=True)
-
         if not text.plain:
-            text.append(" [dim]No agents yet[/dim]\n")
+            text.append("  [dim]No agents yet — /spawn to start[/dim]\n")
 
         peers = len(s.federation_peers)
         agent_label = f"{nav_total} agent{'s' if nav_total != 1 else ''}"
         subtitle = f"[dim]{agent_label}"
-        if svc_agents:
-            subtitle += f" · {len(svc_agents)} services"
         if peers:
             subtitle += f" · {peers} peer(s)"
-        subtitle += "[/dim]"
         if scroll > 0:
-            subtitle += f" [dim]↓{scroll}[/dim]"
+            subtitle += f" ↓{scroll}"
+        subtitle += "[/dim]"
         border_style = "green" if s.panel_focus == "sidebar" else "blue"
         return Panel(
             text,
@@ -133,9 +122,110 @@ class MARSRenderer:
             height=height,
         )
 
-    FEED_LINES = 14  # fixed visible line count (excluding panel border)
-    _CHAT_WINDOW = 6  # messages visible at once
-    _PANEL_FOCUS_ORDER = ("sidebar", "chat", "connections")  # Tab cycle order
+    def render_mcp_panel(self, height: int | None = None) -> Panel:
+        """Bottom-left panel: MCP service agents (collapsed) with selected one expanded."""
+        s = self._s
+        is_focused = s.panel_focus == "mcp"
+        _spin = self._THINKING_SPINNER[int(time.monotonic() * 8) % len(self._THINKING_SPINNER)]
+
+        svc_ids = _mcp_agent_ids(s)
+        max_rows = max(1, (height - 2) if height else 999)
+
+        # Track visible height for scroll-follow (server count, not row count)
+        if height is not None:
+            s.mcp_visible_height = max(1, height - 2)
+
+        # Clamp cursor and scroll to valid range
+        if svc_ids:
+            s.mcp_cursor = max(0, min(s.mcp_cursor, len(svc_ids) - 1))
+            s.mcp_scroll = max(0, min(s.mcp_scroll, len(svc_ids) - 1))
+
+        text = Text()
+
+        if not svc_ids:
+            text.append("  ", style="")
+            text.append("No MCP servers active\n", style="dim")
+            text.append("  ", style="")
+            text.append("/spawn <name> to activate\n", style="dim")
+        else:
+            rows_used = 0
+            for i_abs, aid in enumerate(svc_ids):
+                if i_abs < s.mcp_scroll:
+                    continue
+                if rows_used >= max_rows:
+                    break
+
+                rec = s.agents.get(aid)
+                if rec is None:
+                    continue
+
+                is_selected = is_focused and (i_abs == s.mcp_cursor)
+                is_error = rec.fsm_state in ("ERROR", "CRASHED", "FAILED", "BLOCKED")
+                is_thinking = rec.fsm_state == "THINKING"
+
+                dot_color = (
+                    "red"    if is_error
+                    else "blue"   if is_thinking
+                    else "green"  if rec.fsm_state in ("IDLE", "WAITING", "—", "")
+                    else "grey50"
+                )
+                emoji = "⚠️" if is_error else s.emoji(aid)
+                dot = _spin if is_thinking else "●"
+                dot_style = "bold blue" if is_thinking else dot_color
+
+                tools: list[dict] = getattr(rec, "tool_schemas", []) or []
+                has_children = bool(tools)
+
+                # ▶ collapsed  ▼ expanded  (space when no children)
+                cursor_ch = "►" if is_selected else " "
+                expand_ch = ""
+                if has_children:
+                    expand_ch = " ▼" if is_selected else " ▶"
+
+                # Header row
+                text.append(cursor_ch, style="bold cyan" if is_selected else "")
+                text.append(dot, style=dot_style)
+                text.append(f" {emoji} ")
+                short_id = aid if len(aid) <= 19 else aid[:16] + "…"
+                text.append(short_id, style="bold white" if is_selected else "white")
+                text.append(expand_ch, style="dim cyan")
+                text.append("\n")
+                rows_used += 1
+
+                # Expanded: only real tool names (no internal routing keywords)
+                if is_selected and has_children:
+                    for tool in tools:
+                        if rows_used >= max_rows:
+                            break
+                        name = tool.get("name", "?")[:20]
+                        text.append(f"   ⚙ {name}\n", style="dim cyan")
+                        rows_used += 1
+
+        total_tools = sum(
+            len(getattr(s.agents[aid], "tool_schemas", []) or [])
+            for aid in svc_ids if aid in s.agents
+        )
+        subtitle = f"[dim]{len(svc_ids)} server{'s' if len(svc_ids) != 1 else ''}"
+        if total_tools:
+            subtitle += f" · {total_tools} tool{'s' if total_tools != 1 else ''}"
+        subtitle += "[/dim]"
+
+        border_style = "green" if is_focused else "blue"
+        return Panel(
+            text,
+            title="[bold magenta]🔧 MCP Servers[/bold magenta]",
+            subtitle=subtitle,
+            border_style=border_style,
+            padding=(0, 0),
+            height=height,
+        )
+
+    FEED_LINES = 14          # fallback line count when no height is passed
+    _CHAT_WINDOW_MIN = 4     # never show fewer than this many messages
+    _REPLY_PANEL_H = 7       # rows reserved for the reply panel when visible
+    # Lines of overhead per panel (2 borders + 1 title + 1 padding row)
+    _PANEL_OVERHEAD = 4
+    _PANEL_FOCUS_ORDER = ("sidebar", "mcp", "chat", "connections")  # Tab cycle order
 
     @staticmethod
     def _image_to_halfblocks(data: bytes, max_width: int = 60) -> "Text | None":
@@ -181,6 +271,7 @@ class MARSRenderer:
         scroll: int,
         agent_emoji: str = "",
         room_mode: bool = False,
+        window: int | None = None,
     ) -> tuple[list[Any], int]:
         """Return (blocks, total) for a chat message list.
 
@@ -189,9 +280,10 @@ class MARSRenderer:
         ``cm.sender`` for the label instead of a fixed agent name.
         """
         s = self._s
+        w = window if window is not None else self._CHAT_WINDOW_MIN
         total = len(msgs)
         end = max(0, total - scroll)
-        start = max(0, end - self._CHAT_WINDOW)
+        start = max(0, end - w)
         recent = msgs[start:end]
         user_emoji = s.emoji(s.my_agent_id)
         blocks: list[Any] = []
@@ -222,7 +314,11 @@ class MARSRenderer:
                 if s.echo_mode == "text":
                     body = Text(cm.content, style="white", overflow="fold", no_wrap=False)
                 else:
-                    body = Markdown(cm.content, code_theme="monokai", justify="left")
+                    body = Markdown(
+                        _preprocess_math(cm.content),
+                        code_theme="monokai",
+                        justify="left",
+                    )
             blocks.append(header)
             blocks.append(body)
             if getattr(cm, "attachment", None) and getattr(cm, "attachment_mime", "").startswith("image/"):
@@ -238,14 +334,19 @@ class MARSRenderer:
         s = self._s
         border_style = "green" if s.panel_focus == "chat" else "blue"
 
-        # --- Room chat view (the only chat mode) ---
-        if s.current_agent and s.current_agent.startswith("#"):
-            room_name = s.current_agent[1:]
+        # Messages that fit: each message takes ~3 rows (header + body + blank).
+        # Use actual panel content area when height is known, else fall back.
+        content_h = max(self._CHAT_WINDOW_MIN * 3, (height - self._PANEL_OVERHEAD)) if height else self.FEED_LINES
+        window = max(self._CHAT_WINDOW_MIN, content_h // 3)
+
+        # --- Room chat view ---
+        if s.current_room and s.current_room in s.rooms:
+            room_name = s.current_room
             room_msgs = list(s.rooms_chat.get(room_name, deque()))
             total = len(room_msgs)
-            max_scroll = max(0, total - 1)
+            max_scroll = max(0, total - window)
             scroll = max(0, min(s.chat_scroll, max_scroll))
-            blocks, total = self._render_chat_blocks(room_msgs, scroll, room_mode=True)
+            blocks, total = self._render_chat_blocks(room_msgs, scroll, room_mode=True, window=window)
             if not blocks:
                 members = sorted(s.rooms.get(room_name, set()))
                 if members:
@@ -255,7 +356,7 @@ class MARSRenderer:
                 blocks.append(Text(hint, style="dim"))
             scroll_hint = (
                 f" [dim]↑{scroll} older  ↓=newer[/dim]" if scroll > 0
-                else " [dim]↑=older[/dim]" if total > self._CHAT_WINDOW
+                else " [dim]↑=older[/dim]" if total > window
                 else ""
             )
             members_set = s.rooms.get(room_name, set())
@@ -271,31 +372,31 @@ class MARSRenderer:
                 title=title,
                 border_style=border_style,
                 padding=(0, 1),
-                height=height if height is not None else self.FEED_LINES + 4,
+                height=height if height is not None else self.FEED_LINES + self._PANEL_OVERHEAD,
             )
 
-        # --- Direct agent chat (service agents only — conversational agents always use rooms) ---
-        if s.current_agent and s.current_agent in s.agents and s.current_agent != s.my_agent_id:
-            rec = s.agents[s.current_agent]
+        # --- Direct agent chat (service agents without a room) ---
+        if s.current_room and s.current_room in s.agents and s.current_room != s.my_agent_id:
+            rec = s.agents[s.current_room]
             if not _is_conversational(rec):
                 agent_msgs = list(rec.chat)
                 total = len(agent_msgs)
-                max_scroll = max(0, total - 1)
+                max_scroll = max(0, total - window)
                 scroll = max(0, min(s.chat_scroll, max_scroll))
-                blocks, total = self._render_chat_blocks(agent_msgs, scroll, room_mode=False)
+                blocks, total = self._render_chat_blocks(agent_msgs, scroll, room_mode=False, window=window)
                 if not blocks:
                     blocks.append(Text(
-                        f"Direct chat with {s.current_agent} — type a message to start.",
+                        f"Direct chat with {s.current_room} — type a message to start.",
                         style="dim",
                     ))
                 scroll_hint = (
                     f" [dim]↑{scroll} older  ↓=newer[/dim]" if scroll > 0
-                    else " [dim]↑=older[/dim]" if total > self._CHAT_WINDOW
+                    else " [dim]↑=older[/dim]" if total > window
                     else ""
                 )
-                avatar = rec.avatar or s.emoji(s.current_agent)
+                avatar = rec.avatar or s.emoji(s.current_room)
                 title = (
-                    f"[bold]💬 {avatar}{s.current_agent}[/bold]"
+                    f"[bold]💬 {avatar}{s.current_room}[/bold]"
                     f"{scroll_hint} [dim cyan][echo:{s.echo_mode}][/dim cyan]"
                 )
                 return Panel(
@@ -303,7 +404,7 @@ class MARSRenderer:
                     title=title,
                     border_style=border_style,
                     padding=(0, 1),
-                    height=height if height is not None else self.FEED_LINES + 4,
+                    height=height if height is not None else self.FEED_LINES + self._PANEL_OVERHEAD,
                 )
 
         # --- Global activity feed (nothing selected) ---
@@ -323,18 +424,19 @@ class MARSRenderer:
                 lines_g.append((f"{icon} {ts}  {item.snippet}", "blue"))
             else:
                 lines_g.append((f"{icon} {ts}  {item.snippet}", "dim yellow"))
-        # Show the most recent FEED_LINES lines, oldest at top → newest at bottom
-        visible = lines_g[-self.FEED_LINES:]
+        # Show as many lines as the panel content area allows
+        feed_lines = content_h
+        visible = lines_g[-feed_lines:]
         for content, style in visible:
             text.append(content + "\n", style=style)
-        for _ in range(self.FEED_LINES - len(visible)):
+        for _ in range(feed_lines - len(visible)):
             text.append("\n")
         return Panel(
             text,
             title="[bold]Activity Feed[/bold]",
             border_style=border_style,
             padding=(0, 1),
-            height=height if height is not None else self.FEED_LINES + 4,
+            height=height if height is not None else self.FEED_LINES + self._PANEL_OVERHEAD,
         )
 
     # -- Full header ---------------------------------------------------------
@@ -351,8 +453,12 @@ class MARSRenderer:
         content  = self._s.reply_content
         if not agent_id or not content:
             return None
+        renderable: "Any" = (
+            Markdown(_preprocess_math(content), code_theme="monokai")
+            if _RICH else content
+        )
         return Panel(
-            content,
+            renderable,
             title=f"[bold cyan]✋  {agent_id}[/bold cyan]",
             border_style="blue",
             padding=(0, 2),
@@ -364,14 +470,32 @@ class MARSRenderer:
         text = Text()
         _spin = self._THINKING_SPINNER[int(time.monotonic() * 8) % len(self._THINKING_SPINNER)]
 
-        # ── Group rooms section ──────────────────────────────────────────────
-        rooms = s.rooms  # room_name → set[agent_id]
-        if rooms:
+        rooms = s.rooms
+        sorted_rooms = sorted(rooms.items())
+        if height is not None:
+            s.connections_visible_height = max(1, height - 2)
+        visible_rows = max(1, s.connections_visible_height)
+
+        if sorted_rooms:
+            s.connections_cursor = max(0, min(s.connections_cursor, len(sorted_rooms) - 1))
+            s.connections_scroll = max(0, min(s.connections_scroll, len(sorted_rooms) - 1))
             text.append(" ─ rooms ─\n", style="bold cyan")
-            for room_name, members in sorted(rooms.items()):
-                is_active = s.current_agent == f"#{room_name}"
-                arrow = "►" if is_active else " "
-                room_style = "bold yellow" if is_active else "bold white"
+            for i, (room_name, members) in enumerate(sorted_rooms):
+                if i < s.connections_scroll:
+                    continue
+                if i >= s.connections_scroll + visible_rows:
+                    break
+                is_active = s.current_room == room_name
+                is_cursor = (s.panel_focus == "connections") and (i == s.connections_cursor)
+                if is_active:
+                    arrow = "►"
+                    room_style = "bold yellow"
+                elif is_cursor:
+                    arrow = "›"
+                    room_style = "bold white"
+                else:
+                    arrow = " "
+                    room_style = "white"
                 text.append(f"{arrow} 💬 #{room_name}\n", style=room_style)
                 for mid in sorted(members):
                     mem_em = s.emoji(mid)
@@ -388,12 +512,11 @@ class MARSRenderer:
                             dot = ("●", "green")
                     else:
                         dot = ("●", "green")
-                    text.append(f"   ", style="dim")
+                    text.append("   ", style="dim")
                     text.append(dot[0], style=dot[1])
                     text.append(f" {mem_em} {mid}{role_tag}\n", style="dim")
                 text.append("\n")
-
-        if not rooms:
+        else:
             text.append("  No rooms yet — use /spawn or /join to create one\n", style="dim")
 
         border_style = "green" if s.panel_focus == "connections" else "blue"
@@ -418,26 +541,42 @@ class MARSRenderer:
         # Right-side content: feed fills the available height
         reply_panel = self.render_reply_panel()
         if reply_panel:
-            feed_h = max(4, panel_h - 6)   # shrink feed to fit reply below
+            feed_h = max(4, panel_h - self._REPLY_PANEL_H)
             right_content = Group(self.render_feed(height=feed_h), reply_panel)
         else:
             right_content = self.render_feed(height=panel_h)
 
-        # Three-column layout: sidebar | feed | connections.
+        # Left column: Agents panel (top ~60 %) stacked above MCP panel (bottom ~40 %).
+        agents_h = max(4, int(panel_h * 0.6))
+        mcp_h    = max(4, panel_h - agents_h)
+        left_content = Group(
+            self.render_sidebar(height=agents_h),
+            self.render_mcp_panel(height=mcp_h),
+        )
+
+        # Three-column layout: [agents+mcp] | feed | connections.
         # `no_wrap=True` on the side columns prevents long agent IDs or
         # connection labels from wrapping and pushing the row taller than the
         # configured panel height (a known cause of layout corruption when
         # markdown chat replies are also present).
         layout = Table.grid(expand=True, padding=0)
-        layout.add_column(width=self.SIDE_PANEL_WIDTH, no_wrap=True, overflow="ellipsis")   # sidebar
+        layout.add_column(width=self.SIDE_PANEL_WIDTH, no_wrap=True, overflow="ellipsis")   # left (agents + mcp)
         layout.add_column(ratio=1, overflow="fold")                                          # main feed
         layout.add_column(width=self.SIDE_PANEL_WIDTH, no_wrap=True, overflow="ellipsis")   # connections
-        layout.add_row(self.render_sidebar(height=panel_h), right_content, self.render_connections(height=panel_h))
+        layout.add_row(left_content, right_content, self.render_connections(height=panel_h))
 
-        # Prompt at the bottom
+        # Prompt at the bottom — status_line shown as panel title so command
+        # feedback (✅ Copied, ⏪ Rewound, …) is always visible.
+        status       = self._s.status_line
+        status_style = self._s.status_style or "dim"
         prompt_text = Text()
         prompt_text.append(prompt, style="bold green")
         prompt_text.append(input_buf + "▌")
-        prompt_panel = Panel(prompt_text, border_style="green", padding=(0, 1))
+        prompt_panel = Panel(
+            prompt_text,
+            title=Text(status, style=status_style) if status else None,
+            border_style="green",
+            padding=(0, 1),
+        )
 
         return Group(layout, prompt_panel)

@@ -49,7 +49,7 @@ mars/
     agents/             Built-in MCP service agents (clock, math, file, url, …) + agents.ini
     services/           Agent infrastructure: llm_wire_agent.py, registry.py, mcp_server.py, service_utils.py
   client/
-    cli/                Rich three-pane TUI: main.py, client.py, models.py, commands.py, …
+    cli/                Rich four-pane TUI: main.py, client.py, models.py, commands.py, renderer.py, …
     providers/          LLM provider adapters: mock, anthropic, copilot, ollama, base, registry
   storage/
     artifacts/          Text and zip artifact store

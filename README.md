@@ -40,8 +40,10 @@ Most "multi-agent" frameworks are glorified function-call chains: one orchestrat
 | `git` | git, diff, status, log, add, commit, branch, blame | Git operations via gitpython |
 | `memory` | remember, recall, forget, memory_list | Cross-session key-value memory (`~/.mars/memory.json`) |
 | `session` | save_session, load_session, list_sessions, session | Save/restore conversations in `~/.mars/sessions/` |
+| `filesystem` *(auto, needs Node.js)* | read_file, write_file, edit_file, list_directory, … | Surgical local file access via `npx @modelcontextprotocol/server-filesystem` |
 | `shell` *(on-demand)* | shell, run, exec, bash, terminal | Shell command execution (stdout/stderr/exit_code) |
 | `scheduler` *(on-demand)* | schedule_after, schedule_every, after, every | One-shot and recurring prompt scheduling |
+| `github` *(on-demand)* | search_repositories, create_issue, list_pull_requests, … | GitHub API — requires `GITHUB_PERSONAL_ACCESS_TOKEN` + binary |
 
 **External MCP servers** — any third-party MCP server (e.g. GitHub MCP) plugs in via `agents.ini` with zero Python code; multi-parameter tool schemas are forwarded verbatim.
 

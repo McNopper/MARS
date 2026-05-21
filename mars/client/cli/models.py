@@ -128,9 +128,9 @@ class MARSState:
     platform_name: str = "mars"
     agents: dict[str, AgentRecord] = field(default_factory=dict)
     feed: deque[FeedItem] = field(default_factory=lambda: deque(maxlen=FEED_MAXLEN))
-    current_agent: str | None = None
+    current_room: str | None = None
     # Group rooms: room_name → set of member agent_ids.
-    # When current_agent == "#<room_name>" the feed shows the room chat.
+    # current_room stores the bare room name without a leading '#'.
     rooms: dict[str, set[str]] = field(default_factory=dict)
     rooms_chat: dict[str, Any] = field(default_factory=dict)  # room_name → deque[ChatMessage]
     federation_peers: list[str] = field(default_factory=list)
@@ -156,7 +156,14 @@ class MARSState:
     sidebar_visible_height: int = 20
     # cursor index into the ordered sidebar agent list (for keyboard/wheel nav)
     sidebar_cursor: int = 0
-    # which panel has keyboard focus: "sidebar" | "chat" | "connections"
+    connections_cursor: int = 0
+    connections_scroll: int = 0
+    connections_visible_height: int = 10
+    # MCP panel navigation
+    mcp_scroll: int = 0          # index of first visible MCP server
+    mcp_cursor: int = 0          # index of selected (expanded) MCP server
+    mcp_visible_height: int = 10 # updated each render; used for scroll-follow
+    # which panel has keyboard focus: "sidebar" | "mcp" | "chat" | "connections"
     panel_focus: str = "chat"
     # this CLI's own agent ID — 🏠 in sidebar; set at startup
     my_agent_id: str = "cli-user@1"
@@ -226,7 +233,7 @@ def _sidebar_agent_ids(state: "MARSState") -> list[str]:
 
 
 def _nav_sidebar(state: "MARSState", delta: int) -> None:
-    """Move sidebar cursor by *delta* rows and immediately switch current_agent."""
+    """Move sidebar cursor by *delta* rows without changing the active room."""
     agent_ids = _sidebar_agent_ids(state)
     if not agent_ids:
         return
@@ -241,30 +248,64 @@ def _nav_sidebar(state: "MARSState", delta: int) -> None:
     new_agent = agent_ids[cursor]
     for rec in state.agents.values():
         rec.is_current = False
-    # Conversational agents (LLM, human) always communicate via their auto-room.
-    rec = state.agents.get(new_agent)
-    if rec is not None and _is_conversational(rec) and new_agent in state.rooms:
-        state.current_agent = f"#{new_agent}"
-    else:
-        state.current_agent = new_agent
-    state.chat_scroll = 0
     if new_agent in state.agents:
         state.agents[new_agent].is_current = True
 
 
+def _nav_connections(state: "MARSState", delta: int) -> None:
+    """Move connections panel cursor by delta and set current_room to that room."""
+    room_names = sorted(state.rooms.keys())
+    if not room_names:
+        return
+    cursor = max(0, min(state.connections_cursor + delta, len(room_names) - 1))
+    state.connections_cursor = cursor
+    win = max(1, state.connections_visible_height)
+    if cursor < state.connections_scroll:
+        state.connections_scroll = cursor
+    elif cursor >= state.connections_scroll + win:
+        state.connections_scroll = cursor - win + 1
+    state.current_room = room_names[cursor]
+    state.chat_scroll = 0
+
+
 def _sync_sidebar_cursor(state: "MARSState") -> None:
-    """Sync sidebar_cursor to match current_agent (call after /switch or agent events)."""
+    """Sync sidebar_cursor to match current_room (call after /switch or agent events)."""
     agent_ids = _sidebar_agent_ids(state)
-    # Strip '#' prefix — sidebar always indexes by plain agent IDs, not room names.
-    target = state.current_agent.lstrip("#") if state.current_agent else ""
+    target = state.current_room or ""
     if target in agent_ids:
         idx = agent_ids.index(target)
         state.sidebar_cursor = idx
         # Scroll-follow: keep sidebar_scroll at 0 unless the cursor is outside the
-        # visible window.  Never jump scroll to the cursor unconditionally — that
+        # visible window. Never jump scroll to the cursor unconditionally — that
         # hides agents above the current one when first spawned.
         win = max(1, state.sidebar_visible_height)
         if idx < state.sidebar_scroll:
             state.sidebar_scroll = idx
         elif idx >= state.sidebar_scroll + win:
             state.sidebar_scroll = idx - win + 1
+
+
+# ---------------------------------------------------------------------------
+# MCP panel navigation helpers
+# ---------------------------------------------------------------------------
+
+def _mcp_agent_ids(state: "MARSState") -> list[str]:
+    """Sorted list of MCP service agent IDs (non-conversational, non-echo)."""
+    return sorted(
+        aid for aid, rec in state.agents.items()
+        if not _is_conversational(rec) and rec.agent_type != "EchoBot"
+    )
+
+
+def _nav_mcp(state: "MARSState", delta: int) -> None:
+    """Move the MCP cursor by *delta* rows and scroll-follow to keep it visible."""
+    ids = _mcp_agent_ids(state)
+    if not ids:
+        return
+    cursor = max(0, min(state.mcp_cursor + delta, len(ids) - 1))
+    state.mcp_cursor = cursor
+    win = max(1, state.mcp_visible_height)
+    if cursor < state.mcp_scroll:
+        state.mcp_scroll = cursor
+    elif cursor >= state.mcp_scroll + win:
+        state.mcp_scroll = cursor - win + 1

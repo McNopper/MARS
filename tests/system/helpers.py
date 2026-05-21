@@ -230,3 +230,9 @@ def github_mcp_binary() -> "Path | None":
         if candidate.exists():
             return candidate
     return None
+
+
+def npx_available() -> bool:
+    """Return True when ``npx`` is on PATH (Node.js required for filesystem MCP)."""
+    import shutil
+    return shutil.which("npx") is not None

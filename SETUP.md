@@ -32,6 +32,7 @@ MARS starts and all tests run (skipping unavailable providers) without any of th
 |------|----------------|---------|
 | **GitHub CLI (`gh`)** | Copilot auth — `gh auth login` stores an OAuth token in a config file that MARS reads automatically (no `gh` on PATH needed after login) | [cli.github.com](https://cli.github.com) · `winget install GitHub.cli` · `brew install gh` |
 | **Ollama** | Local LLM inference — free, no API key | [ollama.com/download](https://ollama.com/download) · `winget install Ollama.Ollama` · `brew install ollama` |
+| **Node.js 18+** | Filesystem MCP server — `read_file`, `write_file`, `edit_file` (diff-based) for local files | [nodejs.org/download](https://nodejs.org/en/download) · `winget install OpenJS.NodeJS.LTS` · `brew install node` |
 | **GitHub MCP server binary** | GitHub service agent — search repos, manage issues/PRs | Pre-bundled at `mars/runtime/agents/bin/github-mcp-server.exe`; see §5 below |
 
 System tests check for each optional tool and **skip automatically** when it is not available:
@@ -201,9 +202,51 @@ ollama pull deepseek-r1:8b    # 4.9 GB — reasoning model
 
 Ollama auto-starts its server on `http://localhost:11434` when you install it.
 
-### GitHub MCP server — optional service agent
+### Filesystem MCP server — auto-spawned, local file editing
 
-The GitHub MCP server gives LLM agents direct access to the GitHub API: search repos, read/write files, manage issues and PRs. It is **not auto-spawned** — use `/spawn github` when you need it.
+The filesystem MCP server gives LLM agents surgical access to local files. It is **auto-spawned on server start** (no `/spawn` needed) and scoped to the project root directory.
+
+**Key tools:**
+
+| Tool | What it does |
+|------|-------------|
+| `read_file` | Read a file (supports `head`/`tail` line limits) |
+| `read_multiple_files` | Read several files in one call |
+| `write_file` | Create or overwrite a file |
+| `edit_file` | Surgical diff-based edits — `oldText`/`newText` pairs, supports `dryRun` preview |
+| `list_directory` | List files and directories |
+| `search_files` | Search for files matching a pattern |
+| `move_file` | Move or rename a file |
+| `create_directory` | Create a directory |
+| `get_file_info` | File metadata (size, modified date, etc.) |
+
+**Prerequisite — Node.js 18+:**
+
+```bash
+# Windows
+winget install OpenJS.NodeJS.LTS
+
+# macOS
+brew install node
+
+# Linux
+# https://nodejs.org/en/download/package-manager
+```
+
+Verify: `node --version` and `npx --version`.
+
+The server is launched automatically via `npx -y @modelcontextprotocol/server-filesystem .` (the `.` scopes it to the directory where MARS is started — normally the project root). To allow additional directories, edit the `command` line in `agents.ini`:
+
+```ini
+[filesystem]
+command = npx -y @modelcontextprotocol/server-filesystem . /path/to/other/dir
+```
+
+---
+
+### GitHub MCP server — on-demand service agent
+
+The GitHub MCP server gives LLM agents direct access to the GitHub API: search repos, read/write files, manage issues and PRs. It is **spawned on demand** with `/spawn github` — it is not auto-started on server boot so that the server starts cleanly even without a GitHub token.
 
 **1. Download the binary**
 

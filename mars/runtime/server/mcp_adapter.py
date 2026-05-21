@@ -206,6 +206,11 @@ class MCPAdapter:
                         fut.set_exception(RuntimeError(str(msg["error"])))
                     else:
                         fut.set_result({})
+        # Subprocess exited — cancel any pending requests so callers don't hang.
+        for fut in list(self._pending.values()):
+            if not fut.done():
+                fut.cancel()
+        self._pending.clear()
 
     async def stop(self) -> None:
         """Terminate the subprocess and clean up."""

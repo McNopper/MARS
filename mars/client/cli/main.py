@@ -120,6 +120,7 @@ from mars.client.cli.models import (
     _is_conversational,
     _sidebar_agent_ids,
     _nav_sidebar,
+    _nav_connections,
     _sync_sidebar_cursor,
 )
 from mars.client.cli.utils import (
@@ -309,7 +310,7 @@ __all__ = [
     "ChatMessage", "AgentRecord", "FeedItem",
     "DEFAULT_PORT", "DEFAULT_FEDERATION_PORT", "MARSState",
     "_SIDEBAR_PINNED", "_CONVERSATIONAL_TYPES", "_is_conversational",
-    "_sidebar_agent_ids", "_nav_sidebar", "_sync_sidebar_cursor",
+    "_sidebar_agent_ids", "_nav_sidebar", "_nav_connections", "_sync_sidebar_cursor",
     "_local_ip", "_time_ago", "_normalize_agent_type",
     "_running_service_agent_names", "_load_dotenv",
     "_emit_spawn_status", "_launch_service_agent", "_stop_service_agents",

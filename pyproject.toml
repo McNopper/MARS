@@ -19,6 +19,7 @@ dependencies = [
     "numpy>=1.26",
     "anthropic>=0.25",
     "gitpython>=3.1",
+    "antlr4-python3-runtime>=4.11,<4.12",
 ]
 
 [project.scripts]

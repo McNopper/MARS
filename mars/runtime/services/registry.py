@@ -43,13 +43,28 @@ def resolve_command(command: str) -> list[str]:
     Prefer the configured console-script name when it is on PATH. If it is not
     available (common in editable installs on Windows), fall back to launching
     the matching module with the current Python executable.
+
+    On Windows, batch-script wrappers (.cmd / .bat) are not directly executable
+    by ``asyncio.create_subprocess_exec``; they are wrapped in ``cmd.exe /c``.
     """
-    parts = shlex.split(command)
+    # On Windows, shlex's POSIX mode treats backslashes as escape characters,
+    # which mangles Windows paths (e.g. C:\Users\norbert → C:Usersnorbert).
+    # Use posix=False to preserve backslashes, then strip outer quotes manually
+    # (non-POSIX mode keeps the quote characters in the token).
+    if sys.platform == "win32":
+        raw = shlex.split(command, posix=False)
+        parts = [p[1:-1] if len(p) >= 2 and p[0] == p[-1] and p[0] in ('"', "'") else p
+                 for p in raw]
+    else:
+        parts = shlex.split(command)
     if not parts:
         return []
     executable = parts[0]
-    if shutil.which(executable):
-        return parts
+    resolved = shutil.which(executable)
+    if resolved:
+        if sys.platform == "win32" and resolved.lower().endswith((".cmd", ".bat")):
+            return ["cmd.exe", "/c", resolved, *parts[1:]]
+        return [resolved, *parts[1:]]
     module = _BUILTIN_COMMAND_MODULES.get(executable)
     if module is None:
         return parts

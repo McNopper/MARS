@@ -537,6 +537,58 @@ After spawning, the LLM can call any GitHub tool directly:
 > *"Create an issue titled 'Fix login bug' in owner/repo."*  
 > *"Read the contents of src/main.py from owner/repo on branch main."*
 
+### Example: Filesystem MCP server
+
+The `[filesystem]` entry is included in `agents.ini` with `cost = free` — it is
+**auto-spawned** on every server start. No binary to download; it runs via `npx`.
+
+```ini
+[filesystem]
+description = Filesystem — read, write, edit (diff-based), list, move, search local files
+command = npx -y @modelcontextprotocol/server-filesystem .
+skills = read_file, write_file, edit_file, read_multiple_files, list_directory, ...
+category = external
+cost = free
+protocol = mcp
+```
+
+**Prerequisites:**
+
+| What | How |
+|------|-----|
+| Node.js 18+ | Windows: `winget install OpenJS.NodeJS.LTS` · macOS: `brew install node` · Linux: [nodejs.org](https://nodejs.org/en/download/package-manager) |
+| npx | Included with Node.js — no separate install needed |
+
+The `.` argument scopes the server to the current working directory (project root).
+Add extra paths to allow access to other directories:
+
+```ini
+command = npx -y @modelcontextprotocol/server-filesystem . /tmp /home/user/docs
+```
+
+**Key tools:**
+
+| Tool | Description |
+|------|-------------|
+| `edit_file` | Surgical diff-based edit — `{path, edits:[{oldText,newText}], dryRun?}` |
+| `write_file` | Overwrite / create a file |
+| `read_file` | Read a single file |
+| `read_multiple_files` | Read several files in one call |
+| `list_directory` | List entries in a directory |
+| `search_files` | Glob/pattern search across the allowed tree |
+| `move_file` | Move or rename a file |
+| `get_file_info` | Return size, type, and timestamps |
+| `create_directory` | Create a directory (parents included) |
+| `list_allowed_directories` | Show which roots the server may access |
+
+**Usage:**
+
+The filesystem agent is available immediately after the server starts — no `/spawn` needed.
+
+> *"Read src/main.py and summarise the entry point."*  
+> *"Edit README.md — replace the placeholder version number with 2.0."*  
+> *"Search for all `.py` files that import `asyncio`."*
+
 ---
 
 ## Implementing a service agent

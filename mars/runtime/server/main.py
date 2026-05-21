@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+_GROUP_ROOM = "group"
 
 
 def _agent_payload(rec: AgentRecord, state: MARSState) -> dict[str, Any]:
@@ -300,8 +301,26 @@ class MARSServer:
             for other in list(self._clients):
                 if other.role == "human" and other.agent_id and other is not session:
                     self._room_join(room_name, other.agent_id)
-                    # Switch the human to this new room
                     self._send_to(other, {"t": "switch", "current_agent": f"#{room_name}"})
+
+            llm_ids = [
+                c.agent_id for c in self._clients
+                if c.agent_id
+                and self._state.agents.get(c.agent_id) is not None
+                and self._state.agents[c.agent_id].agent_type == "LLMAgent"
+            ]
+            if len(llm_ids) >= 2:
+                for llm_id in llm_ids:
+                    self._room_join(_GROUP_ROOM, llm_id)
+                for other in list(self._clients):
+                    if other.role == "human" and other.agent_id:
+                        self._room_join(_GROUP_ROOM, other.agent_id)
+                        self._send_to(other, {"t": "switch", "current_agent": f"#{_GROUP_ROOM}"})
+
+        elif session.role == "human":
+            if _GROUP_ROOM in self._rooms:
+                self._room_join(_GROUP_ROOM, agent_id)
+                self._send_to(session, {"t": "switch", "current_agent": f"#{_GROUP_ROOM}"})
 
     async def _remove_session(self, session: ClientSession) -> None:
         # Leave all rooms before removing the session so room_part events can be delivered.
@@ -309,6 +328,16 @@ class MARSServer:
             for room_name in list(self._rooms.keys()):
                 if session.agent_id in self._rooms.get(room_name, set()):
                     self._room_part(room_name, session.agent_id)
+
+        if _GROUP_ROOM in self._rooms:
+            llm_in_group = [
+                mid for mid in self._rooms.get(_GROUP_ROOM, set())
+                if mid in self._state.agents
+                and self._state.agents[mid].agent_type == "LLMAgent"
+            ]
+            if len(llm_in_group) < 2:
+                for mid in list(self._rooms.get(_GROUP_ROOM, set())):
+                    self._room_part(_GROUP_ROOM, mid)
         if session in self._clients:
             self._clients.remove(session)
         if session.agent_id and self._sessions_by_id.get(session.agent_id) is session:

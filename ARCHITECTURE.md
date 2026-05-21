@@ -124,7 +124,7 @@ The planned 6-tier knowledge topology (Formal Sciences → Natural Sciences → 
 
 ## 🎮 Agent FSM metadata (fields only, no engine)
 
-> **Status:** `AgentRecord` stores `fsm_state` and `fsm_strategy` fields; the CLI sidebar displays them. There is **no platform FSM engine** — transitions are not driven by MARS.
+> **Status:** `AgentRecord` stores `fsm_state` and `fsm_strategy` fields; the CLI **Agents** panel displays them for conversational agents and the **MCP Servers** panel displays them for service agents. There is **no platform FSM engine** — transitions are not driven by MARS.
 
 Agents can self-report their state via `{"t":"fsm","fsm_state":"…","fsm_strategy":"…"}` events. The CLI renders these. Planned state presets and strategies (COOPERATIVE, TIT_FOR_TAT, NASH_SEEKING, etc.) are documented in the research papers but not implemented.
 

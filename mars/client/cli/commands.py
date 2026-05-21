@@ -8,6 +8,12 @@ None of these functions connect to the server — they operate entirely on
 ``MARSState`` or run local subprocesses.  Commands that need to *send* a
 message to an agent receive the ``asyncio.StreamWriter`` as the ``writer``
 argument and call ``writer.write(...)`` directly.
+
+Shared helpers
+--------------
+- ``_send_msg(writer, target, text)``  — write one JSON msg frame
+- ``_require_agent(state)``            — return current agent or set status_line
+- ``_reply(state, agent, content)``    — show content in the reply panel
 """
 from __future__ import annotations
 
@@ -15,6 +21,31 @@ import json
 import re as _re
 from pathlib import Path as _Path
 from typing import Any
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _send_msg(writer: "Any", target: str, text: str) -> None:
+    """Write one ``{"t": "msg", ...}`` JSON frame to *writer*."""
+    writer.write((json.dumps({"t": "msg", "target": target, "text": text}) + "\n").encode())
+
+
+def _require_agent(state: "Any") -> "str | None":
+    """Return the current direct-agent target when a valid agent is selected."""
+    target = getattr(state, "current_room", None)
+    if not target or target not in getattr(state, "agents", {}):
+        state.status_line = "No active agent — use /spawn to start one."
+        return None
+    return target
+
+
+def _reply(state: "Any", agent: str, content: str) -> None:
+    """Show *content* in the reply panel attributed to *agent*."""
+    state.reply_agent   = agent
+    state.reply_content = content
 
 
 # ---------------------------------------------------------------------------
@@ -76,11 +107,132 @@ def _handle_bang_cmd(line: str, state: "Any | None" = None) -> bool:
         output = f"[error: {exc}]"
 
     if state is not None:
-        state.reply_agent = "!shell"
-        state.reply_content = output or "(no output)"
+        _reply(state, "!shell", output or "(no output)")
     else:
         print(output or "(no output)", end="\n")
     return True
+
+
+# ---------------------------------------------------------------------------
+# /agents  /agents available  /help  /read
+# ---------------------------------------------------------------------------
+
+_HELP_TEXT = """\
+# MARS CLI — Commands
+
+## Agents
+| Command | Description |
+| --- | --- |
+| `/spawn <provider> [model]` | Start a new agent |
+| `/stop <agent-id>` | Stop an agent |
+| `/agents [available]` | List active or available agents |
+| `/switch <room-or-agent>` | Switch current room or agent |
+| `/status [agent-id]` | Show agent FSM state |
+| `/verbose [agent-id]` | Toggle verbose output |
+| `/avatar <emoji\\|number>` | Set your avatar |
+
+## Rooms
+| Command | Description |
+| --- | --- |
+| `/join <room> [agent-id]` | Join or add agent to a room |
+| `/part [room]` | Leave a room |
+| `/list` | List rooms |
+
+## Conversation
+| Command | Description |
+| --- | --- |
+| `/new` | Clear current conversation |
+| `/compact` | Summarize and compact history |
+| `/rewind` | Remove last message pair |
+| `/ask <question>` | One-off question (not saved to history) |
+| `/plan <task>` | Ask for an implementation plan |
+| `/read <file>` | Read a file into the reply panel |
+
+## Workspace
+| Command | Description |
+| --- | --- |
+| `@file` | Inline-expand a file in your message |
+| `!cmd` | Run a shell command |
+| `/copy` | Copy last reply to clipboard |
+| `/context` | Show token usage estimate |
+| `/instructions` | Load AGENTS.md / CLAUDE.md |
+| `/share [filename]` | Export session to markdown |
+| `/search <query>` | Search conversation history |
+
+## Rendering
+| Command | Description |
+| --- | --- |
+| `/echo text\\|md\\|void` | Switch output rendering mode |
+| `/theme [name]` | Switch color theme |
+
+## Other
+| Command | Description |
+| --- | --- |
+| `/version` | Show MARS version |
+| `/help` | Show this help |
+| `/quit` | Exit |
+"""
+
+
+def _cmd_help(state: "Any") -> None:
+    """Show the full command reference in the reply panel (``/help``)."""
+    _reply(state, "📖 help", _HELP_TEXT)
+
+
+def _cmd_agents(state: "Any") -> None:
+    """List active agents as a Markdown table in the reply panel (``/agents``)."""
+    agents = getattr(state, "agents", {})
+    if not agents:
+        state.status_line = "No agents connected."
+        return
+    rows = ["| Agent ID | Type | FSM State | Active |", "| --- | --- | --- | --- |"]
+    for aid, rec in agents.items():
+        marker = "◀" if aid == getattr(state, "current_room", None) else ""
+        rows.append(
+            f"| `{aid}` | {rec.agent_type} | {rec.fsm_state} | {marker} |"
+        )
+    _reply(state, "🤖 agents", "\n".join(rows))
+
+
+def _cmd_agents_available(state: "Any") -> None:
+    """List available service agents in the reply panel (``/agents available``)."""
+    from mars.runtime.services.registry import all_specs
+    from mars.client.cli.utils import _running_service_agent_names
+
+    specs = all_specs()
+    running = _running_service_agent_names(state)
+    rows = [
+        "| Name | Status | Cost | Skills | Description |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for spec in specs:
+        is_running = spec.name in running or f"{spec.name}-agent" in running
+        status = "🟢 running" if is_running else "⚪ available"
+        skills = ", ".join(spec.skills[:3])
+        rows.append(
+            f"| `{spec.name}` | {status} | {spec.cost} | {skills} | {spec.description} |"
+        )
+    _reply(state, "🔧 available agents", "\n".join(rows))
+
+
+def _cmd_read(state: "Any", path: str) -> None:
+    """Read a file and display its contents in the reply panel (``/read <file>``)."""
+    if not path:
+        state.status_line = "Usage: /read <file>"
+        return
+    p = _Path(path)
+    if not p.exists():
+        state.status_line = f"File not found: {path}"
+        return
+    if not p.is_file():
+        state.status_line = f"Not a file: {path}"
+        return
+    try:
+        content = p.read_text(encoding="utf-8", errors="replace")
+        suffix = p.suffix.lstrip(".")
+        _reply(state, f"📄 {p.name}", f"```{suffix}\n{content}\n```")
+    except Exception as exc:
+        state.status_line = f"Error reading {path}: {exc}"
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +245,7 @@ def _cmd_copy(state: "Any", writer: "Any") -> None:
     """Copy the last agent reply to the clipboard (``/copy``)."""
     content = getattr(state, "reply_content", "") or ""
     if not content:
-        agent = getattr(state, "current_agent", None)
+        agent = getattr(state, "current_room", None)
         if agent and agent in getattr(state, "agents", {}):
             rec = state.agents[agent]
             msgs = list(rec.chat)
@@ -121,7 +273,7 @@ def _cmd_copy(state: "Any", writer: "Any") -> None:
 
 def _cmd_new(state: "Any") -> None:
     """Clear conversation history for the current agent (``/new``)."""
-    agent = getattr(state, "current_agent", None)
+    agent = getattr(state, "current_room", None)
     if agent and agent in getattr(state, "agents", {}):
         state.agents[agent].chat.clear()
     feed = getattr(state, "feed", None)
@@ -134,7 +286,7 @@ def _cmd_new(state: "Any") -> None:
 
 def _cmd_context(state: "Any") -> None:
     """Show token usage estimate for the current context (``/context``)."""
-    agent = getattr(state, "current_agent", None)
+    agent = getattr(state, "current_room", None)
     total_chars = 0
     msg_count = 0
     if agent and agent in getattr(state, "agents", {}):
@@ -152,6 +304,8 @@ def _cmd_context(state: "Any") -> None:
 def _cmd_instructions(state: "Any", writer: "Any") -> None:
     """Load AGENTS.md / CLAUDE.md / copilot-instructions.md and send to current agent (``/instructions``)."""
     import os as _os
+    if not (target := _require_agent(state)):
+        return
     candidates = [
         _Path.cwd() / "AGENTS.md",
         _Path.cwd() / "CLAUDE.md",
@@ -168,33 +322,16 @@ def _cmd_instructions(state: "Any", writer: "Any") -> None:
     instructions = "\n\n".join(
         f"# From {p.name}\n{content}" for p, content in found
     )
-    target = getattr(state, "current_agent", None)
-    if target:
-        writer.write(
-            (
-                json.dumps(
-                    {
-                        "t": "msg",
-                        "target": target,
-                        "text": f"[SYSTEM INSTRUCTIONS]\n{instructions}",
-                    }
-                )
-                + "\n"
-            ).encode()
-        )
-        state.status_line = (
-            f"📋 Loaded instructions from: "
-            f"{', '.join(p.name for p, _ in found)}"
-        )
-    else:
-        state.status_line = "No active agent to send instructions to."
+    _send_msg(writer, target, f"[SYSTEM INSTRUCTIONS]\n{instructions}")
+    state.status_line = (
+        f"📋 Loaded instructions from: "
+        f"{', '.join(p.name for p, _ in found)}"
+    )
 
 
 def _cmd_compact(state: "Any", writer: "Any") -> None:
     """Summarize and compact conversation history (``/compact``)."""
-    target = getattr(state, "current_agent", None)
-    if not target or target not in getattr(state, "agents", {}):
-        state.status_line = "No active agent."
+    if not (target := _require_agent(state)):
         return
     rec = state.agents[target]
     history = "\n".join(
@@ -206,11 +343,9 @@ def _cmd_compact(state: "Any", writer: "Any") -> None:
         "keeping all important facts, decisions, and context:\n\n"
         + history
     )
-    writer.write(
-        (json.dumps({"t": "msg", "target": target, "text": prompt}) + "\n").encode()
-    )
+    _send_msg(writer, target, prompt)
     rec.chat.clear()
-    state.status_line = "📝 Compacting... reply will replace history."
+    state.status_line = "📝 Compacting… reply will replace history."
 
 
 def _cmd_share(state: "Any", args: str = "") -> None:
@@ -222,7 +357,7 @@ def _cmd_share(state: "Any", args: str = "") -> None:
         if parts
         else f"mars-session-{_dt.now().strftime('%Y%m%d-%H%M%S')}.md"
     )
-    target = getattr(state, "current_agent", None)
+    target = getattr(state, "current_room", None)
     lines = [f"# MARS Session — {_dt.now().strftime('%Y-%m-%d %H:%M')}\n"]
     if target and target in getattr(state, "agents", {}):
         for m in state.agents[target].chat:
@@ -239,9 +374,7 @@ def _cmd_share(state: "Any", args: str = "") -> None:
 def _cmd_rewind(state: "Any") -> None:
     """Remove the last user + agent message pair (``/rewind``)."""
     from collections import deque as _deque
-    target = getattr(state, "current_agent", None)
-    if not target or target not in getattr(state, "agents", {}):
-        state.status_line = "Nothing to rewind."
+    if not (target := _require_agent(state)):
         return
     rec = state.agents[target]
     msgs = list(rec.chat)
@@ -261,28 +394,25 @@ def _cmd_rewind(state: "Any") -> None:
 def _cmd_search(state: "Any", query: str) -> None:
     """Search conversation history (``/search <query>``)."""
     q = query.lower()
-    target = getattr(state, "current_agent", None)
     if not q:
         state.status_line = "Usage: /search <query>"
         return
-    if target and target in getattr(state, "agents", {}):
-        matches = [
-            m
-            for m in state.agents[target].chat
-            if q in m.content.lower()
-        ]
-        if matches:
-            state.reply_agent = target
-            state.reply_content = "\n\n---\n\n".join(
+    if not (target := _require_agent(state)):
+        return
+    matches = [m for m in state.agents[target].chat if q in m.content.lower()]
+    if matches:
+        _reply(
+            state,
+            target,
+            "\n\n---\n\n".join(
                 f"[{m.ts.strftime('%H:%M:%S')} "
                 f"{'→' if m.direction == 'out' else '←'}] "
                 f"{m.content[:500]}"
                 for m in matches[-5:]
-            )
-        else:
-            state.status_line = f"No matches for '{query}'"
+            ),
+        )
     else:
-        state.status_line = "No active agent."
+        state.status_line = f"No matches for '{query}'"
 
 
 def _cmd_ask(state: "Any", writer: "Any", question: str) -> None:
@@ -290,26 +420,13 @@ def _cmd_ask(state: "Any", writer: "Any", question: str) -> None:
     if not question:
         state.status_line = "Usage: /ask <question>"
         return
-    target = getattr(state, "current_agent", None)
-    if target:
-        writer.write(
-            (
-                json.dumps(
-                    {
-                        "t": "msg",
-                        "target": target,
-                        "text": (
-                            "[ONE-OFF QUESTION — do not add to your "
-                            f"conversation history]\n{question}"
-                        ),
-                    }
-                )
-                + "\n"
-            ).encode()
-        )
-        state.status_line = f"❓ Asked: {question[:60]}…"
-    else:
-        state.status_line = "No active agent."
+    if not (target := _require_agent(state)):
+        return
+    _send_msg(
+        writer, target,
+        f"[ONE-OFF QUESTION — do not add to your conversation history]\n{question}",
+    )
+    state.status_line = f"❓ Asked: {question[:60]}…"
 
 
 def _cmd_plan(state: "Any", writer: "Any", task: str) -> None:
@@ -317,19 +434,15 @@ def _cmd_plan(state: "Any", writer: "Any", task: str) -> None:
     if not task:
         state.status_line = "Usage: /plan <task description>"
         return
-    target = getattr(state, "current_agent", None)
-    if target:
-        prompt = (
-            "Please create a detailed implementation plan for the following "
-            "task. Break it into numbered steps, identify potential risks, "
-            "and list what you'll need before starting. "
-            "Do NOT start implementing yet.\n\nTask: " + task
-        )
-        writer.write(
-            (json.dumps({"t": "msg", "target": target, "text": prompt}) + "\n").encode()
-        )
-    else:
-        state.status_line = "No active agent."
+    if not (target := _require_agent(state)):
+        return
+    _send_msg(
+        writer, target,
+        "Please create a detailed implementation plan for the following "
+        "task. Break it into numbered steps, identify potential risks, "
+        "and list what you'll need before starting. "
+        "Do NOT start implementing yet.\n\nTask: " + task,
+    )
 
 
 def _cmd_version(state: "Any") -> None:

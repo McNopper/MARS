@@ -38,11 +38,18 @@ python -m mars.client.cli.main --remote localhost:7432          # explicit host:
 python -m mars.client.cli.main --remote 192.168.1.10:7432       # remote server
 ```
 
-The CLI opens with three panels: the **agent list**, the **conversation log**, and the **capability board** (service agents and their skills).
+The CLI opens with **four panels** arranged in a three-column layout:
+
+| Column | Panels | Contents |
+|--------|--------|----------|
+| Left (top) | 🤖 **Agents** | Conversational agents: LLM, human, bridge |
+| Left (bottom) | 🔧 **MCP Servers** | Service agents and the tools they expose |
+| Centre | 💬 **Activity / Chat** | Message feed or active conversation |
+| Right | 💬 **Rooms & Comms** | Group rooms and their members |
 
 ## Keyboard shortcuts
 
-The three-pane TUI supports panel scrolling and focus switching with the keyboard.
+The four-pane TUI supports panel scrolling and focus switching with the keyboard.
 
 | Key | Action |
 |-----|--------|
@@ -55,7 +62,9 @@ The three-pane TUI supports panel scrolling and focus switching with the keyboar
 | **Backspace** | Delete last character |
 | **Ctrl-C** | Exit |
 
-The focused panel is highlighted with a **yellow** border. Moving the cursor in the Agents panel immediately switches the active agent in the chat panel — no `/switch` needed. A `►` marker highlights the selected agent. Sending a message or using `/switch` automatically scrolls the chat panel back to the newest message.
+The focused panel is highlighted with a **green** border. Moving the cursor in the Agents panel immediately switches the active agent in the chat panel — no `/switch` needed. A `►` marker highlights the selected agent. Sending a message or using `/switch` automatically scrolls the chat panel back to the newest message.
+
+The **MCP Servers** panel (bottom-left) is read-only — it automatically lists every active service agent together with the tools it exposes. When a server has no tools yet (still initialising) it falls back to showing skill tags.
 
 ---
 
@@ -77,7 +86,7 @@ The focused panel is highlighted with a **yellow** border. Moving the cursor in 
 /spawn ollama --role "Writer" --goal "Draft documentation" --behaviour proactive
 ```
 
-Reactive agents show a `⚡` badge in the sidebar and room member list. Proactive agents show `⏰` and emit periodic tick status events into their rooms.
+Reactive agents show a `⚡` badge in the Agents panel and room member list. Proactive agents show `⏰` and emit periodic tick status events into their rooms.
 
 `/providers` lists every registered backend; `/models <provider>` lists models for one. `/agents available` lists every spawnnable service agent from `mars/runtime/agents/agents.ini`.
 
@@ -132,7 +141,7 @@ The CLI surfaces each agent's runtime mode directly in the UI:
 - `⚡` — reactive agent (message-driven only)
 - `⏰` — proactive agent (runs `on_tick()` on a schedule)
 
-The badge appears both in the left sidebar and in the room member list, so group chats show at a glance which participants may speak up on their own.
+The badge appears in the **Agents** panel and in the room member list, so group chats show at a glance which participants may speak up on their own.
 
 ---
 
@@ -174,7 +183,7 @@ The prompt shows `[#roomname GROUP]>` when you are inside a room.
 
 ## THINKING indicator
 
-When an agent is processing a request, its sidebar tile shows an animated braille spinner (`⠋⠙⠹⠸…`) in blue. The spinner is driven by the system clock so it stays smooth at any refresh rate. When the reply is ready, the spinner is replaced by `✋ reply ready`.
+When an agent is processing a request, its tile in the **Agents** or **MCP Servers** panel shows an animated braille spinner (`⠋⠙⠹⠸…`) in blue. The spinner is driven by the system clock so it stays smooth at any refresh rate. When the reply is ready, the spinner is replaced by `✋ reply ready`.
 
 ---
 

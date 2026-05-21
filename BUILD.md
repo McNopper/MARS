@@ -45,7 +45,7 @@ python -m pytest tests/ -x -q
 python -m pytest -m llm
 ```
 
-Run `python -m pytest tests/ -x -q` and check the output for the current count (approximately 700 tests).
+Run `python -m pytest tests/ -x -q` and check the output for the current count (approximately 990 tests).
 
 > Tests marked `@pytest.mark.llm` are excluded from the default run via `addopts = "-x -m 'not llm'"` in `pyproject.toml`. They require live API credentials and are intended for manual smoke-testing only.
 
@@ -62,29 +62,41 @@ python -m pytest tests/ -x -q
 | Path | What it covers |
 |------|---------------|
 | `runtime/server/test_mcp_adapter.py` | MCPAdapter init, envelope constants |
-| `runtime/agents/test_status_agent.py` | Status agent when REST is unreachable |
+| `runtime/agents/test_clock_agent.py` | Clock agent time/location response |
+| `runtime/agents/test_file_agent.py` | File agent read/write/list/delete/mkdir |
 | `runtime/agents/test_launcher_agent.py` | Launcher `_parse_spawn_request` |
-| `runtime/agents/test_shell_agent.py` | Shell agent dispatch, truncation, JSON form |
-| `runtime/agents/test_git_agent.py` | Git agent dispatch, gitpython integration |
 | `runtime/agents/test_memory_agent.py` | Memory agent CRUD, serialisation |
-| `runtime/agents/test_session_agent.py` | Session save/load/list/rename/delete |
+| `runtime/agents/test_ollama_agent.py` | Ollama models agent list/parse |
+| `runtime/agents/test_profiler_agent.py` | Profiler agent CPU/RAM metrics |
 | `runtime/agents/test_scheduler_agent.py` | Scheduler after/every/cancel/list |
+| `runtime/agents/test_session_agent.py` | Session save/load/list/rename/delete |
+| `runtime/agents/test_shell_agent.py` | Shell agent dispatch, truncation, JSON form |
+| `runtime/agents/test_status_agent_unreachable.py` | Status agent when REST is unreachable |
+| `runtime/agents/test_sympy_agent.py` | SymPy agent expression evaluation |
+| `runtime/agents/test_url_agent.py` | URL agent fetch, private-IP blocking |
+| `runtime/agents/test_git_agent.py` | Git agent dispatch, gitpython integration |
 | `runtime/services/test_mcp_server.py` | MCPServer tool dispatch, `_to_content`, protocol |
+| `runtime/services/test_service_tool.py` | `_ServiceTool` name/description/parameters |
 | `runtime/services/test_service_utils.py` | Pure helpers: `parse_server`, `build_hello`, `encode_json_artifact`, `looks_like_base64`, etc. |
-| `runtime/services/test_registry.py` | `_ServiceTool` name/description/parameters |
-| `client/cli/test_tui_scroll.py` | TUI scroll buffer |
-| `client/cli/test_sidebar_agents.py` | Sidebar agent list rendering |
-| `client/cli/test_ui_bugs.py` | UI edge-case regression tests |
-| `client/cli/test_cli_utils.py` | CLI utility helpers |
+| `runtime/services/test_structured_tool_call.py` | Structured MCP tool call argument passing |
+| `runtime/services/test_registry.py` | `AgentSpec` parsing, `resolve_command` (including Windows path handling) |
+| `client/cli/test_cli_commands.py` | `@file` expansion, `!cmd` runner, command helpers |
 | `client/cli/test_cli_models.py` | CLI data models |
 | `client/cli/test_cli_service_manager.py` | Service manager logic |
-| `client/providers/test_provider_registry.py` | Provider registry lookup |
-| `client/providers/test_copilot_provider.py` | Copilot token resolution (config file, env vars) |
+| `client/cli/test_cli_utils.py` | CLI utility helpers |
+| `client/cli/test_math_renderer.py` | Math symbol substitution in renderer output |
+| `client/cli/test_renderer_visual.py` | Renderer visual output: sidebar, MCP panel |
+| `client/cli/test_sidebar_agents.py` | Sidebar agent list rendering |
+| `client/cli/test_tui_rendering.py` | TUI panel layout and rendering |
+| `client/cli/test_tui_scroll.py` | TUI scroll buffer |
 | `client/providers/test_anthropic_provider_ext.py` | Anthropic provider extensions |
 | `client/providers/test_anthropic_thinking.py` | Anthropic extended thinking |
-| `storage/artifacts/test_artifacts.py` | Artifact store read/write |
+| `client/providers/test_copilot_provider.py` | Copilot token resolution (config file, env vars) |
+| `client/providers/test_ollama_provider.py` | Ollama provider list/validate |
+| `client/providers/test_openai_compat.py` | OpenAI-compatible HTTP path |
+| `client/providers/test_provider_registry.py` | Provider registry lookup |
 | `storage/artifacts/test_artifact_store_observer.py` | Artifact observer notifications |
-| `storage/artifacts/test_renderer_visual.py` | Renderer visual output |
+| `storage/artifacts/test_artifacts.py` | Artifact store read/write |
 | `storage/scopes/test_scope.py` | Scope creation and field validation |
 | `storage/scopes/test_scope_store.py` | ScopeStore load / skill lookup |
 
@@ -92,7 +104,9 @@ python -m pytest tests/ -x -q
 
 | Path | What it covers |
 |------|---------------|
-| `runtime/server/test_server.py` | Server message routing with fakes |
+| `test_smoke.py` | Import and initialisation of every top-level module (catches missing imports before server start) |
+| `runtime/server/test_mcp_adapter_external.py` | MCPAdapter with external MCP subprocess (fake server) |
+| `client/cli/test_cli_command_dispatch.py` | CLI command dispatch: `/help`, `/agents`, `/read`, and other commands against a fake TUI state |
 
 **`tests/module/`** — multi-component integration tests
 
@@ -101,6 +115,7 @@ python -m pytest tests/ -x -q
 | `runtime/server/test_mcp_adapter.py` | MCPAdapter subprocess lifecycle and tool calls |
 | `runtime/server/test_external_mcp_spawn.py` | External MCP server spawn + tool routing |
 | `runtime/services/test_registry.py` | INI-driven agent registry parsing and auto-spawn |
+| `client/test_cli_commands_e2e.py` | CLI commands exercised over a real loopback TCP server |
 | `client/providers/test_providers.py` | MockProvider, base types, ToolSpec protocol |
 | `storage/scopes/test_scopes.py` | Scope creation, store, domain contributions |
 
@@ -116,9 +131,14 @@ python -m pytest tests/ -x -q
 | `test_shell_agent_system.py` | Shell agent execution round-trip |
 | `test_git_agent_system.py` | Git agent status/diff/log round-trip |
 | `test_memory_agent_system.py` | Memory agent remember/recall/forget round-trip |
+| `test_cli_visual.py` | Full TUI visual rendering: all CLI commands produce correct Rich output |
+| `test_cli_state_rendering.py` | CLI state → TUI panel rendering (agents, MCP servers, rooms) |
+| `test_filesystem_mcp_server.py` | Filesystem MCP server: fake (offline) and real (requires `npx`) |
+| `test_github_mcp_server.py` | GitHub MCP server: fake (offline) and real (requires binary + token) |
 | `test_anthropic_wire_agent.py` | Anthropic wire agent integration (needs `ANTHROPIC_API_KEY`) |
 | `test_copilot_wire_agent.py` | Copilot wire agent integration (needs Copilot subscription) |
 | `test_ollama_wire_agent.py` | Ollama wire agent integration (needs local Ollama) |
+| `test_hello_copilot_ollama.py` | Say hello to Copilot + Ollama in one session (needs both) |
 | `test_multi_provider.py` | Copilot + Ollama together (marked `llm`, excluded from default run) |
 | `test_cli_startup.py` | CLI startup and server connection |
 

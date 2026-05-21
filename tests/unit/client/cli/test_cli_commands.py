@@ -55,7 +55,7 @@ from mars.client.cli.renderer import MARSRenderer
 def _make_state_with_agent(agent_id: str = "llm.mock@1") -> MARSState:
     state = MARSState()
     state.my_agent_id = "cli-user@1"
-    state.current_agent = agent_id
+    state.current_room = agent_id
     state.agents[agent_id] = AgentRecord(
         agent_id=agent_id,
         agent_type="LLMAgent",
@@ -367,7 +367,7 @@ class TestApplyEvent:
             "t": "spawn", "agent_id": "llm.mock@1",
             "agent_type": "LLMAgent", "domain": "default",
         })
-        assert term._state.current_agent == "llm.mock@1"
+        assert term._state.current_room == "llm.mock@1"
 
     def test_despawn_removes_agent(self):
         state = _make_state_with_agent()
@@ -422,15 +422,15 @@ class TestApplyEvent:
         snippets = [item.snippet for item in term._state.feed]
         assert any("FEED_CONTENT_XYZ" in s for s in snippets)
 
-    def test_switch_event_changes_current_agent(self):
+    def test_switch_event_changes_current_room(self):
         state = _make_state_with_agent("llm.mock@1")
         state.agents["llm.other@1"] = AgentRecord(
             agent_id="llm.other@1", agent_type="LLMAgent",
             domain="default", platform="local", skills=[],
         )
         term = _make_terminal(state)
-        term._apply_event({"t": "switch", "current_agent": "llm.other@1"})
-        assert term._state.current_agent == "llm.other@1"
+        term._apply_event({"t": "switch", "current_agent": "#llm.other@1"})
+        assert term._state.current_room == "llm.other@1"
 
 
 # ---------------------------------------------------------------------------
@@ -448,7 +448,7 @@ class TestHandleCommandLocal:
         state = _make_state_with_agent()
         term = _make_terminal(state)
         asyncio.run(term._handle_command("/switch llm.mock@1"))
-        assert state.current_agent == "llm.mock@1"
+        assert state.current_room == "llm.mock@1"
 
     def test_switch_to_unknown_agent_sets_status(self):
         state = _make_state_with_agent()
@@ -512,11 +512,15 @@ class TestHandleCommandLocal:
         assert payload["t"] == "cmd"
         assert "/spawn mock" in payload["text"]
 
-    def test_help_sets_status_line(self):
+    def test_help_sets_reply_content(self):
+        """/help must populate reply_content with a Markdown command table."""
         state = _make_state_with_agent()
         term = _make_terminal(state)
         asyncio.run(term._handle_command("/help"))
-        assert state.status_line  # non-empty help text
+        assert state.reply_content, "/help must set reply_content"
+        assert "|" in state.reply_content or "/" in state.reply_content, (
+            "reply_content must contain command reference"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -577,3 +581,235 @@ class TestThinkingSpinner:
 
 
 import json
+
+
+# ---------------------------------------------------------------------------
+# _require_agent helper
+# ---------------------------------------------------------------------------
+
+
+class TestRequireAgent:
+    def test_returns_agent_id_when_valid(self):
+        from mars.client.cli.commands import _require_agent
+        state = _make_state_with_agent()
+        result = _require_agent(state)
+        assert result == "llm.mock@1"
+
+    def test_returns_none_when_no_agent(self):
+        from mars.client.cli.commands import _require_agent
+        state = MARSState()
+        assert _require_agent(state) is None
+
+    def test_sets_status_line_when_no_agent(self):
+        from mars.client.cli.commands import _require_agent
+        state = MARSState()
+        _require_agent(state)
+        assert state.status_line  # non-empty
+
+    def test_returns_none_for_unknown_current_room(self):
+        from mars.client.cli.commands import _require_agent
+        state = MARSState()
+        state.current_room = "ghost@99"  # not in state.agents
+        assert _require_agent(state) is None
+
+
+# ---------------------------------------------------------------------------
+# _reply helper
+# ---------------------------------------------------------------------------
+
+
+class TestReplyHelper:
+    def test_sets_reply_agent(self):
+        from mars.client.cli.commands import _reply
+        state = MARSState()
+        _reply(state, "bot@1", "Hello!")
+        assert state.reply_agent == "bot@1"
+
+    def test_sets_reply_content(self):
+        from mars.client.cli.commands import _reply
+        state = MARSState()
+        _reply(state, "bot@1", "Some content")
+        assert state.reply_content == "Some content"
+
+
+# ---------------------------------------------------------------------------
+# _send_msg helper
+# ---------------------------------------------------------------------------
+
+
+class TestSendMsg:
+    def test_writes_json_frame(self):
+        from mars.client.cli.commands import _send_msg
+        writer = MagicMock()
+        _send_msg(writer, "llm.mock@1", "hello")
+        writer.write.assert_called_once()
+        payload = json.loads(writer.write.call_args[0][0].decode().strip())
+        assert payload["t"] == "msg"
+        assert payload["target"] == "llm.mock@1"
+        assert payload["text"] == "hello"
+
+
+# ---------------------------------------------------------------------------
+# _cmd_help
+# ---------------------------------------------------------------------------
+
+
+class TestCmdHelp:
+    def test_sets_reply_content(self):
+        from mars.client.cli.commands import _cmd_help
+        state = MARSState()
+        _cmd_help(state)
+        assert state.reply_content
+
+    def test_reply_content_is_markdown_table(self):
+        from mars.client.cli.commands import _cmd_help
+        state = MARSState()
+        _cmd_help(state)
+        # Help text must include a Markdown table header row
+        assert "|" in state.reply_content
+        assert "Command" in state.reply_content
+
+    def test_contains_common_commands(self):
+        from mars.client.cli.commands import _cmd_help
+        state = MARSState()
+        _cmd_help(state)
+        for cmd in ("/spawn", "/agents", "/help", "/quit", "/echo"):
+            assert cmd in state.reply_content, f"{cmd} must be in help text"
+
+    def test_reply_agent_set(self):
+        from mars.client.cli.commands import _cmd_help
+        state = MARSState()
+        _cmd_help(state)
+        assert state.reply_agent  # must be attributed to some agent string
+
+    def test_via_handle_command(self):
+        """_handle_command('/help') must route to _cmd_help (reply panel, not status)."""
+        state = _make_state_with_agent()
+        term = _make_terminal(state)
+        asyncio.run(term._handle_command("/help"))
+        assert state.reply_content, "/help must populate reply_content"
+        assert "|" in state.reply_content, "/help must produce a Markdown table"
+
+
+# ---------------------------------------------------------------------------
+# _cmd_agents
+# ---------------------------------------------------------------------------
+
+
+class TestCmdAgents:
+    def test_with_agents_sets_reply_content(self):
+        from mars.client.cli.commands import _cmd_agents
+        state = _make_state_with_agent()
+        _cmd_agents(state)
+        assert state.reply_content
+
+    def test_reply_content_contains_agent_id(self):
+        from mars.client.cli.commands import _cmd_agents
+        state = _make_state_with_agent()
+        _cmd_agents(state)
+        assert "llm.mock@1" in state.reply_content
+
+    def test_reply_content_is_markdown_table(self):
+        from mars.client.cli.commands import _cmd_agents
+        state = _make_state_with_agent()
+        _cmd_agents(state)
+        assert "|" in state.reply_content
+
+    def test_current_room_marked(self):
+        from mars.client.cli.commands import _cmd_agents
+        state = _make_state_with_agent()
+        _cmd_agents(state)
+        assert "◀" in state.reply_content
+
+    def test_no_agents_sets_status(self):
+        from mars.client.cli.commands import _cmd_agents
+        state = MARSState()
+        _cmd_agents(state)
+        assert state.status_line  # error feedback when empty
+
+    def test_via_handle_command(self):
+        """_handle_command('/agents') must populate reply panel, not corrupt TUI."""
+        state = _make_state_with_agent()
+        term = _make_terminal(state)
+        asyncio.run(term._handle_command("/agents"))
+        assert state.reply_content, "/agents must populate reply_content"
+        assert "llm.mock@1" in state.reply_content
+
+
+# ---------------------------------------------------------------------------
+# _cmd_read
+# ---------------------------------------------------------------------------
+
+
+class TestCmdRead:
+    def test_reads_existing_file(self, tmp_path):
+        from mars.client.cli.commands import _cmd_read
+        f = tmp_path / "notes.txt"
+        f.write_text("line1\nline2\n")
+        state = MARSState()
+        _cmd_read(state, str(f))
+        assert "line1" in state.reply_content
+        assert "line2" in state.reply_content
+
+    def test_file_wrapped_in_fence(self, tmp_path):
+        from mars.client.cli.commands import _cmd_read
+        f = tmp_path / "sample.py"
+        f.write_text("x = 1\n")
+        state = MARSState()
+        _cmd_read(state, str(f))
+        assert "```" in state.reply_content
+
+    def test_missing_file_sets_status(self):
+        from mars.client.cli.commands import _cmd_read
+        state = MARSState()
+        _cmd_read(state, "/no/such/file.txt")
+        assert state.status_line
+        assert not state.reply_content
+
+    def test_empty_path_sets_status(self):
+        from mars.client.cli.commands import _cmd_read
+        state = MARSState()
+        _cmd_read(state, "")
+        assert "usage" in state.status_line.lower() or "read" in state.status_line.lower()
+
+    def test_reply_agent_is_filename(self, tmp_path):
+        from mars.client.cli.commands import _cmd_read
+        f = tmp_path / "readme.md"
+        f.write_text("# readme\n")
+        state = MARSState()
+        _cmd_read(state, str(f))
+        assert "readme.md" in state.reply_agent
+
+    def test_via_handle_command(self, tmp_path):
+        """/read <file> via _handle_command must work end-to-end."""
+        f = tmp_path / "data.txt"
+        f.write_text("FILEDATA_XYZ\n")
+        state = _make_state_with_agent()
+        term = _make_terminal(state)
+        asyncio.run(term._handle_command(f"/read {f}"))
+        assert "FILEDATA_XYZ" in state.reply_content
+
+    def test_directory_sets_status(self, tmp_path):
+        from mars.client.cli.commands import _cmd_read
+        state = MARSState()
+        _cmd_read(state, str(tmp_path))
+        assert state.status_line  # must report error for directory input
+
+
+# ---------------------------------------------------------------------------
+# _handle_bang_cmd — state routing (TUI mode)
+# ---------------------------------------------------------------------------
+
+
+class TestHandleBangCmdTUIMode:
+    def test_state_receives_output_in_tui_mode(self):
+        state = MARSState()
+        from mars.client.cli.commands import _handle_bang_cmd
+        _handle_bang_cmd("!echo TUI_TEST_OUTPUT", state)
+        assert "TUI_TEST_OUTPUT" in state.reply_content
+
+    def test_reply_agent_set_to_shell(self):
+        state = MARSState()
+        from mars.client.cli.commands import _handle_bang_cmd
+        _handle_bang_cmd("!echo hi", state)
+        assert "shell" in state.reply_agent.lower()

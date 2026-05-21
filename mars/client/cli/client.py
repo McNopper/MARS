@@ -10,13 +10,18 @@ from typing import Any
 
 from mars.client.cli.models import (
     MARSState, AgentRecord, ChatMessage, FeedItem,
-    HUMAN_AVATARS, _is_conversational, _nav_sidebar, _sync_sidebar_cursor,
+    HUMAN_AVATARS, _is_conversational, _nav_sidebar, _nav_connections,
+    _sync_sidebar_cursor, _nav_mcp,
 )
 from mars.client.cli.renderer import MARSRenderer
 from mars.client.cli.utils import _normalize_agent_type, _normalize_echo_mode, _running_service_agent_names
 from mars.client.cli.commands import (
     _expand_file_mentions,
     _handle_bang_cmd,
+    _cmd_help,
+    _cmd_agents,
+    _cmd_agents_available,
+    _cmd_read,
     _cmd_copy,
     _cmd_new,
     _cmd_context,
@@ -96,6 +101,7 @@ class MARSClientTerminal:
                     competence_level  = data.get("competence_level", "COMPETENT"),
                     competence_score  = float(data.get("competence_score", 50.0)),
                     skills            = data.get("skills", []),
+                    tool_schemas      = list(data.get("tool_schemas") or []),
                     server_addr       = data.get("server_addr", ""),
                 )
                 role = str(data.get("role") or "")
@@ -136,18 +142,22 @@ class MARSClientTerminal:
                             content=cm.get("content", ""),
                             direction=cm.get("direction", "in"),
                         ))
-            self._state.current_agent = ev.get("current_agent")
-            if self._state.current_agent:
+            current = ev.get("current_agent")
+            self._state.current_room = current.lstrip("#") if isinstance(current, str) else None
+            if self._state.current_room:
                 self._state.chat_scroll = 0
-            bare = (self._state.current_agent or "").lstrip("#")
+            bare = self._state.current_room or ""
             if bare and bare in self._state.agents:
                 self._state.agents[bare].is_current = True
-            elif not self._state.current_agent:
+            elif not self._state.current_room:
                 agents = [a for a in self._state.agents if a != self._state.my_agent_id]
                 if agents:
-                    self._state.current_agent = agents[0]
+                    self._state.current_room = agents[0]
                     self._state.agents[agents[0]].is_current = True
             _sync_sidebar_cursor(self._state)
+            room_names = sorted(self._state.rooms.keys())
+            if self._state.current_room in room_names:
+                self._state.connections_cursor = room_names.index(self._state.current_room)
 
         elif t == "spawn":
             aid = ev.get("agent_id", "")
@@ -165,6 +175,7 @@ class MARSClientTerminal:
                     competence_level  = ev.get("competence_level", "COMPETENT"),
                     competence_score  = float(ev.get("competence_score", 50.0)),
                     skills            = ev.get("skills", []),
+                    tool_schemas      = list(ev.get("tool_schemas") or []),
                 )
                 role = str(ev.get("role") or "")
                 behaviour = str(ev.get("behaviour") or "")
@@ -174,12 +185,12 @@ class MARSClientTerminal:
                     self._state.agent_behaviours[aid] = behaviour
                 # Auto-select first conversational agent (LLM etc.) as current chat target.
                 rec = self._state.agents.get(aid)
-                if (not self._state.current_agent
+                if (not self._state.current_room
                         and aid != self._state.my_agent_id
                         and rec is not None
                         and _is_conversational(rec)
                         and rec.agent_type not in ("HumanUser",)):
-                    self._state.current_agent = aid
+                    self._state.current_room = aid
                     rec.is_current = True
                     _sync_sidebar_cursor(self._state)
 
@@ -188,9 +199,9 @@ class MARSClientTerminal:
             self._state.agents.pop(aid, None)
             self._state.agent_roles.pop(aid, None)
             self._state.agent_behaviours.pop(aid, None)
-            if self._state.current_agent == aid:
+            if self._state.current_room == aid:
                 remaining = [a for a in self._state.agents if a != self._state.my_agent_id]
-                self._state.current_agent = remaining[0] if remaining else None
+                self._state.current_room = remaining[0] if remaining else None
 
         elif t == "welcome":
             new_id = ev.get("your_id", "cli-user@1")
@@ -204,9 +215,9 @@ class MARSClientTerminal:
                     platform="local",
                     skills=[],
                 )
-            # Clear current_agent if it somehow points to our own ID
-            if self._state.current_agent == new_id:
-                self._state.current_agent = None
+            # Clear current_room if it somehow points to our own ID
+            if self._state.current_room == new_id:
+                self._state.current_room = None
 
         elif t == "feed":
             try:
@@ -275,7 +286,7 @@ class MARSClientTerminal:
                 if img_bytes:
                     rec = self._state.agents.get(created_by)
                     if rec is None and created_by in ("server",):
-                        rec = self._state.agents.get(self._state.current_agent or "")
+                        rec = self._state.agents.get(self._state.current_room or "")
                     if rec is not None:
                         rec.chat.append(ChatMessage(
                             ts=datetime.now(), sender=created_by,
@@ -326,6 +337,12 @@ class MARSClientTerminal:
                 from_id="server", to_id="",
                 snippet=f"🏠 Room #{room}: {', '.join(sorted(members))}",
             ))
+            room_names = sorted(self._state.rooms.keys())
+            if room in room_names:
+                self._state.connections_cursor = room_names.index(room)
+            if not self._state.current_room:
+                self._state.current_room = room
+                self._state.chat_scroll = 0
 
         elif t == "room_part":
             room = ev.get("room", "")
@@ -340,6 +357,13 @@ class MARSClientTerminal:
                 from_id="server", to_id="",
                 snippet=f"🚪 {member} left room #{room}",
             ))
+            room_names = sorted(self._state.rooms.keys())
+            if self._state.current_room == room and room not in self._state.rooms:
+                self._state.current_room = room_names[0] if room_names else None
+            if room_names:
+                self._state.connections_cursor = min(self._state.connections_cursor, len(room_names) - 1)
+            else:
+                self._state.connections_cursor = 0
 
         elif t == "room_msg":
             room = ev.get("room", "")
@@ -360,15 +384,18 @@ class MARSClientTerminal:
                 pass  # has_reply removed; reply always visible in chat
 
         elif t == "switch":
-            new_agent = ev.get("current_agent")
-            if new_agent is not None:
+            new_target = ev.get("current_agent")
+            if new_target is not None:
                 for rec in self._state.agents.values():
                     rec.is_current = False
-                self._state.current_agent = new_agent
-                bare = new_agent.lstrip("#")
+                self._state.current_room = new_target.lstrip("#")
+                bare = self._state.current_room
                 if bare in self._state.agents:
                     self._state.agents[bare].is_current = True
                 _sync_sidebar_cursor(self._state)
+                room_names = sorted(self._state.rooms.keys())
+                if self._state.current_room in room_names:
+                    self._state.connections_cursor = room_names.index(self._state.current_room)
 
     # ------------------------------------------------------------------
     # Send helpers
@@ -379,32 +406,16 @@ class MARSClientTerminal:
         self._writer.write(line)
 
     def _prompt_str(self) -> str:
-        agent = self._state.current_agent
-        srv   = f" @{self._server_addr}" if self._server_addr else ""
-        return f"[{agent}{srv}]> " if agent else f"[mars{srv}]> "
+        room = self._state.current_room
+        srv = f" @{self._server_addr}" if self._server_addr else ""
+        if room:
+            display = f"#{room}" if room in self._state.rooms else room
+            return f"[{display}{srv}]> "
+        return f"[mars{srv}]> "
 
     def _cmd_agents_available(self) -> None:
-        from mars.runtime.services.registry import all_specs
-
-        specs = all_specs()
-        running_names = _running_service_agent_names(self._state)
-        if _RICH and self._console:
-            table = Table(title="Available Service Agents  (/spawn <name> [args])")
-            table.add_column("Name", style="cyan bold")
-            table.add_column("Status")
-            table.add_column("Cost", style="magenta")
-            table.add_column("Skills", style="dim")
-            table.add_column("Description")
-            for spec in specs:
-                is_running = spec.name in running_names or f"{spec.name}-agent" in running_names
-                status = "🟢 running" if is_running else "⚪ available"
-                table.add_row(spec.name, status, spec.cost, ", ".join(spec.skills[:3]), spec.description)
-            self._console.print(table)
-        else:
-            for spec in specs:
-                is_running = spec.name in running_names or f"{spec.name}-agent" in running_names
-                status = "running" if is_running else "available"
-                print(f"  [{status:9}] {spec.name:12} {spec.cost:10} {spec.description}")
+        """Kept for backward compatibility — delegates to commands module."""
+        _cmd_agents_available(self._state)
 
     # ------------------------------------------------------------------
     # Local command handler
@@ -420,40 +431,32 @@ class MARSClientTerminal:
             return True
         elif cmd == "agents":
             if args and args[0] == "available":
-                self._cmd_agents_available()
-            elif _RICH and self._console:
-                table = Table(title="Active Agents")
-                table.add_column("Agent ID",  style="cyan")
-                table.add_column("Type",      style="dim")
-                table.add_column("FSM State", style="blue")
-                table.add_column("Current",   style="green")
-                for aid, rec in self._state.agents.items():
-                    table.add_row(
-                        aid, rec.agent_type,
-                        rec.fsm_state,
-                        "◀" if aid == self._state.current_agent else "",
-                    )
-                self._console.print(table)
+                _cmd_agents_available(self._state)
             else:
-                for aid, rec in self._state.agents.items():
-                    marker = " ◀" if aid == self._state.current_agent else ""
-                    print(f"  {aid}{marker}")
+                _cmd_agents(self._state)
         elif cmd == "switch":
-            if not args:
-                self._state.status_line = "Usage: /switch <agent_id>"
-            else:
-                target = args[0]
-                if target in self._state.agents:
+            if args:
+                target = args[0].lstrip("#")
+                if target in self._state.rooms:
+                    self._state.current_room = target
+                    self._state.chat_scroll = 0
+                    self._state.status_line = f"Switched to room #{target}"
+                    room_names = sorted(self._state.rooms.keys())
+                    self._state.connections_cursor = room_names.index(target)
+                elif target in self._state.agents:
+                    self._state.current_room = target
+                    self._state.chat_scroll = 0
                     for rec in self._state.agents.values():
                         rec.is_current = False
-                    self._state.current_agent = target
-                    self._state.chat_scroll = 0
                     self._state.agents[target].is_current = True
                     self._state.status_line = f"Switched to '{target}'"
+                    _sync_sidebar_cursor(self._state)
                 else:
-                    self._state.status_line = f"Agent '{target}' not found. Use /agents."
+                    self._state.status_line = f"Room or agent '{target}' not found."
+            else:
+                self._state.status_line = "Usage: /switch <room_or_agent_id>"
         elif cmd == "status":
-            aid = args[0] if args else self._state.current_agent
+            aid = args[0] if args else self._state.current_room
             if not aid:
                 self._state.status_line = "No agent selected."
             else:
@@ -480,7 +483,7 @@ class MARSClientTerminal:
                     rec.avatar = emoji
                 self._state.status_line = f"Avatar set to {emoji}"
         elif cmd == "verbose":
-            aid = args[0] if args else self._state.current_agent
+            aid = args[0] if args else self._state.current_room
             if not aid:
                 self._state.status_line = "Usage: /verbose <agent_id>"
             else:
@@ -524,15 +527,10 @@ class MARSClientTerminal:
             _cmd_ask(self._state, self._writer, " ".join(args))
         elif cmd == "plan":
             _cmd_plan(self._state, self._writer, " ".join(args))
+        elif cmd == "read":
+            _cmd_read(self._state, " ".join(args))
         elif cmd == "help":
-            self._state.status_line = (
-                "Agents: /spawn /stop /agents /switch /status /verbose /avatar  "
-                "Rooms: /join /part /list  "
-                "Conversation: /new /compact /rewind /ask /plan /read  "
-                "Workspace: @file !cmd /copy /context /instructions /share /search  "
-                "Rendering: /echo /theme  "
-                "Other: /version /help /quit"
-            )
+            _cmd_help(self._state)
         else:
             # Forward anything unknown to the server (/spawn, /stop, /join, /part, /list, …)
             self._send({"t": "cmd", "text": line})
@@ -595,11 +593,19 @@ class MARSClientTerminal:
                             self._state.chat_scroll = max(0, self._state.chat_scroll - 1)
                         elif focus == "sidebar":
                             _nav_sidebar(self._state, -1)
+                        elif focus == "connections":
+                            _nav_connections(self._state, -1)
+                        elif focus == "mcp":
+                            _nav_mcp(self._state, -1)
                     elif sc in DOWN:
                         if focus == "chat":
                             self._state.chat_scroll += 1
                         elif focus == "sidebar":
                             _nav_sidebar(self._state, +1)
+                        elif focus == "connections":
+                            _nav_connections(self._state, +1)
+                        elif focus == "mcp":
+                            _nav_mcp(self._state, +1)
 
                 while True:
                     try:
@@ -670,11 +676,19 @@ class MARSClientTerminal:
                                         self._state.chat_scroll = max(0, self._state.chat_scroll - 1)
                                     elif focus == "sidebar":
                                         _nav_sidebar(self._state, -1)
+                                    elif focus == "connections":
+                                        _nav_connections(self._state, -1)
+                                    elif focus == "mcp":
+                                        _nav_mcp(self._state, -1)
                                 elif ch3 == 'B':  # arrow down
                                     if focus == "chat":
                                         self._state.chat_scroll += 1
                                     elif focus == "sidebar":
                                         _nav_sidebar(self._state, +1)
+                                    elif focus == "connections":
+                                        _nav_connections(self._state, +1)
+                                    elif focus == "mcp":
+                                        _nav_mcp(self._state, +1)
                                 elif ch3 == 'M':  # X10 mouse button event
                                     try:
                                         btn = ord(sys.stdin.read(1)) - 32
@@ -685,11 +699,19 @@ class MARSClientTerminal:
                                                 self._state.chat_scroll = max(0, self._state.chat_scroll - 1)
                                             elif focus == "sidebar":
                                                 _nav_sidebar(self._state, -1)
+                                            elif focus == "connections":
+                                                _nav_connections(self._state, -1)
+                                            elif focus == "mcp":
+                                                _nav_mcp(self._state, -1)
                                         elif btn == 65:  # wheel down
                                             if focus == "chat":
                                                 self._state.chat_scroll += 1
                                             elif focus == "sidebar":
                                                 _nav_sidebar(self._state, +1)
+                                            elif focus == "connections":
+                                                _nav_connections(self._state, +1)
+                                            elif focus == "mcp":
+                                                _nav_mcp(self._state, +1)
                                     except Exception:
                                         pass
                         else:
@@ -739,30 +761,27 @@ class MARSClientTerminal:
                     elif line.startswith("!"):
                         _handle_bang_cmd(line, state=self._state)
                     else:
-                        target = self._state.current_agent
+                        target = self._state.current_room
                         if not target:
-                            self._state.status_line = (
-                                "No active agent — use /spawn on the server first."
-                            )
-                        elif target.startswith("#"):
-                            # Room message — append to room chat and broadcast
+                            self._state.status_line = "No active room — use /spawn on the server first."
+                        elif target in self._state.rooms:
                             expanded = _expand_file_mentions(line)
-                            room_name = target[1:]
+                            room_name = target
                             if room_name not in self._state.rooms_chat:
                                 self._state.rooms_chat[room_name] = []
                             self._state.rooms_chat[room_name].append(ChatMessage(
-                                ts=datetime.now(), sender=self._state.my_agent_id,
-                                content=line, direction="out",
+                                ts=datetime.now(), sender=self._state.my_agent_id or "you",
+                                content=expanded, direction="out",
                             ))
                             self._state.chat_scroll = 0
-                            self._send({"t": "msg", "target": target, "text": expanded})
+                            self._send({"t": "msg", "target": f"#{target}", "text": expanded})
                         else:
                             expanded = _expand_file_mentions(line)
                             rec = self._state.agents.get(target)
                             if rec:
                                 rec.chat.append(ChatMessage(
-                                    ts=datetime.now(), sender=self._state.my_agent_id,
-                                    content=line, direction="out",
+                                    ts=datetime.now(), sender=self._state.my_agent_id or "you",
+                                    content=expanded, direction="out",
                                 ))
                             self._state.chat_scroll = 0
                             self._send({"t": "msg", "target": target, "text": expanded})
@@ -795,16 +814,26 @@ class MARSClientTerminal:
                 elif line.startswith("!"):
                     _handle_bang_cmd(line)
                 else:
-                    target = self._state.current_agent
-                    if target:
+                    target = self._state.current_room
+                    if not target:
+                        self._state.status_line = "No active room — use /spawn on the server first."
+                    elif target in self._state.rooms:
                         expanded = _expand_file_mentions(line)
-                        if target.startswith("#"):
-                            room_name = target[1:]
-                            if room_name not in self._state.rooms_chat:
-                                self._state.rooms_chat[room_name] = []
-                            self._state.rooms_chat[room_name].append(ChatMessage(
-                                ts=datetime.now(), sender=self._state.my_agent_id,
-                                content=line, direction="out",
+                        room_name = target
+                        if room_name not in self._state.rooms_chat:
+                            self._state.rooms_chat[room_name] = []
+                        self._state.rooms_chat[room_name].append(ChatMessage(
+                            ts=datetime.now(), sender=self._state.my_agent_id or "you",
+                            content=expanded, direction="out",
+                        ))
+                        self._send({"t": "msg", "target": f"#{target}", "text": expanded})
+                    else:
+                        expanded = _expand_file_mentions(line)
+                        rec = self._state.agents.get(target)
+                        if rec:
+                            rec.chat.append(ChatMessage(
+                                ts=datetime.now(), sender=self._state.my_agent_id or "you",
+                                content=expanded, direction="out",
                             ))
                         self._send({"t": "msg", "target": target, "text": expanded})
                     await asyncio.sleep(3.0)
