@@ -57,6 +57,18 @@ cover/
 
 # Django stuff:
 *.log
+
+# MARS runtime logs (now live in ~/.mars/logs/)
+artifacts/logs/
+
+# MARS self-hosting workflow runtime state (regenerated each run; the
+# traceable artifacts under aspice/ are kept, the live state machine is not)
+.mars/state.json
+
+# Isolated worktree where the self-hosting workflow makes its changes — kept
+# OUT of the live tree so MARS stays stable mid-run; promoted via git merge.
+.mars/workspace/
+.mars/workspace.base
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -216,3 +228,27 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Screenshots (temporary render artefacts)
+screenshots/
+
+# Runtime data files
+*.db
+*.sqlite
+*.sqlite3
+mars_audit.jsonl
+*_audit.jsonl
+
+
+mars_server.out
+mars_server.err
+server_err.txt
+server_full.txt
+
+screenshot_current.png
+
+# Claude Code local settings
+.claude/
+
+# Pre-built binaries (download separately; not for version control)
+bin/

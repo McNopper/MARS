@@ -1,0 +1,440 @@
+"""MARS Service Registry – unified factory for all services.
+
+Usage
+-----
+    from mars.server.services import get_service, list_services
+
+    # LLM services
+    ollama = get_service("ollama", model="llama3.2")
+    anthropic = get_service("anthropic")
+
+    # MCP services
+    filesystem = get_service("filesystem", command="uvicorn mcp-server")
+
+    # A2A services
+    remote = get_service("remote-mars", url="http://localhost:8000")
+
+    print(list_services())
+    # ['anthropic', 'ollama', 'copilot', 'filesystem', 'status', ...]
+
+Adding a new service
+--------------------
+1. Create service class in appropriate subdirectory:
+   - LLM: mars/server/services/llm/
+   - MCP: mars/server/services/mcp/
+   - A2A: mars/server/services/a2a/
+   - Builtin: mars/server/services/builtin/
+2. Add entry to REGISTRY below.
+3. Add to DEFAULT_SERVICES if it should start automatically.
+
+Service types
+-------------
+* llm - Language model providers (Ollama, Anthropic, Copilot)
+* mcp - MCP (Model Context Protocol) servers
+* a2a - A2A (Agent-to-Agent) remote MARS connections
+* builtin - Built-in utility services (status, launcher, profiler)
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import importlib
+import os
+import shlex
+from typing import Any
+
+from mars.server.services.base import Service
+
+
+# ---------------------------------------------------------------------------
+# Availability checks — credential probes, no network calls
+# ---------------------------------------------------------------------------
+
+def _available_ollama() -> bool:
+    """Ollama is local; treat as available if the host env is set or default assumed."""
+    return True  # No key needed; reachability is checked at spawn time
+
+
+def _available_copilot() -> bool:
+    """True if a Copilot OAuth token is resolvable without network I/O."""
+    import contextlib
+    for var in ("COPILOT_API_KEY", "GH_COPILOT_TOKEN", "GITHUB_COPILOT_TOKEN"):
+        if os.environ.get(var):
+            return True
+    # Try gh auth token (fast subprocess, no network)
+    import shutil
+    import subprocess
+    if not shutil.which("gh"):
+        return False
+    with contextlib.suppress(Exception):
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True, text=True, timeout=2,
+            env={k: v for k, v in os.environ.items() if k != "GITHUB_TOKEN"},
+        )
+        return bool(result.stdout.strip())
+    return False
+
+
+def _available_anthropic() -> bool:
+    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_KEY"))
+
+
+def _not_available() -> bool:
+    """Services that require explicit user configuration before they can be used."""
+    return False
+
+
+# Map service name → availability probe (None = always available)
+_AVAILABILITY: dict[str, Any] = {
+    "copilot":     _available_copilot,
+    "anthropic":   _available_anthropic,
+    "ollama":      _available_ollama,
+    # MCP services need a user-supplied command — not usable out of the box
+    "filesystem":  _not_available,
+    "mcp-generic": _not_available,
+    # A2A needs a peer address to connect to
+    "remote-mars": _not_available,
+}
+
+
+def _is_available(name: str) -> bool:
+    """Return True if *name* has the credentials/prerequisites it needs."""
+    probe = _AVAILABILITY.get(name)
+    if probe is None:
+        return True  # builtin / mcp / a2a — always considered available
+    return bool(probe())
+
+
+# ---------------------------------------------------------------------------
+# Legacy AgentSpec for service_manager compatibility
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass
+class AgentSpec:
+    """Agent specification for service spawning (legacy compatibility)."""
+    name: str
+    command: str
+    cost: str = "demand"  # "free" or "demand"
+    description: str = ""
+    skills: list[str] = dataclasses.field(default_factory=list)
+    category: str = "provider"
+    protocol: str = "tcp"  # "tcp" = wire agent subprocess; "mcp" = stdio MCP adapter
+
+
+def all_specs() -> list[AgentSpec]:
+    """Return all agent specs from agents.ini (legacy compatibility)."""
+    # For now, return empty list - this functionality may be replaced by service registry
+    return []
+
+
+def get_agent_spec(name: str) -> AgentSpec | None:
+    """Get an AgentSpec for legacy code compatibility.
+
+    This function provides backward compatibility for code that expects
+    AgentSpec objects with protocol, command, and other legacy fields.
+    It converts the new Service-based registry into the old AgentSpec format.
+
+    Returns None for LLM services - these should use the wire agent spawning
+    logic instead of the legacy provider spawning.
+    """
+    key = name.lower().strip()
+    key = _ALIASES.get(key, key)
+
+    entry = REGISTRY.get(key)
+    if entry is None:
+        return None
+
+    module_path, class_name, service_type, is_default, _ = entry
+
+    # LLM services should use wire agent spawning, not legacy provider spawning
+    if service_type == "llm":
+        return None
+
+    # Map service types to protocols
+    protocol_map = {
+        "mcp": "mcp",
+        "a2a": "a2a",
+        "builtin": "mcp"  # Built-in services use MCP protocol
+    }
+    protocol = protocol_map.get(service_type, "mcp")
+
+    # Determine cost
+    cost = "free" if key in FREE_SERVICES else "demand"
+
+    # Create a placeholder command for services that don't have subprocess commands
+    if service_type == "builtin":
+        command = f"python -m mars.server.services.builtin.{class_name.lower()}"
+    elif service_type == "mcp":
+        command = f"python -m mars.server.services.mcp.service --name {key}"
+    else:
+        command = f"python -m mars.server.services.{service_type}.service --name {key}"
+
+    return AgentSpec(
+        name=key,
+        command=command,
+        cost=cost,
+        description=f"{key} service ({service_type})",
+        skills=[],
+        category="provider",
+        protocol=protocol
+    )
+
+
+def resolve_command(cmd_str: str) -> list[str]:
+    """Resolve command string to list of arguments (legacy compatibility)."""
+    return shlex.split(cmd_str)
+
+# Registry: service name → (module path, class name, service_type, default, test_only)
+# Lazy imports – the module is only loaded when get_service() is called.
+REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
+    # === LLM Services ===
+    # GitHub Copilot Chat (uses GITHUB_TOKEN / gh auth login – no extra SDK)
+    "copilot":   ("mars.server.services.llm.copilot",   "CopilotService",      "llm", False, False),
+    # Anthropic Claude (pip install anthropic + ANTHROPIC_API_KEY)
+    "anthropic": ("mars.server.services.llm.anthropic", "AnthropicService",    "llm", False, False),
+    # Local Ollama server (https://ollama.com – no API key required)
+    "ollama":    ("mars.server.services.llm.ollama",    "OllamaService",       "llm", False, False),
+    # Mock provider – offline testing only, not shown in the services panel
+    "mock":      ("mars.server.services.llm.mock",      "MockService",         "llm", False, True),
+    # Mock provider that emits tool calls – for tool round-trip tests only
+    "mock-tool": ("mars.server.services.llm.mock",      "ToolCallMockService",  "llm", False, True),
+
+    # === MCP Services ===
+    # MCP filesystem server (stdio)
+    "filesystem": ("mars.server.services.mcp.service",  "MCPService",              "mcp", False, False),
+    # Generic MCP server adapter (can wrap any stdio MCP server)
+    "mcp-generic": ("mars.server.services.mcp.service", "MCPService",              "mcp", False, False),
+
+    # === A2A Services ===
+    # A2A peer connection to remote MARS instance
+    "remote-mars": ("mars.server.services.a2a.service",  "A2AService",               "a2a", False, False),
+
+    # === Builtin Services ===
+    # Discovery service (dynamic service discovery for LLMs - starts automatically)
+    "discovery":    ("mars.server.services.builtin.discovery", "DiscoveryService",       "builtin", True,  False),
+    # Status service (always runs)
+    "status":       ("mars.server.services.builtin.status_service",  "StatusService",        "builtin", True,  False),
+    # Launcher service (handles agent spawning)
+    "launcher":     ("mars.server.services.builtin.launcher_service", "LauncherService",      "builtin", True,  False),
+    # Agent Communication service (agent-to-agent messaging)
+    "agent-comm":   ("mars.server.services.builtin.agent_service", "AgentCommunicationService", "builtin", True,  False),
+    # Profiler service (performance monitoring)
+    "profiler":     ("mars.server.services.builtin.profiler", "ProfilerService",     "builtin", False, False),
+    # CLI service (handles CLI connections)
+    "cli":          ("mars.server.services.builtin.cli_service",       "CLIService",           "builtin", True,  False),
+}
+
+# Aliases
+_ALIASES: dict[str, str] = {
+    "claude": "anthropic",
+}
+
+# Services that start automatically with MARS
+DEFAULT_SERVICES: list[str] = [
+    "discovery",   # Dynamic service discovery for LLMs (primary bootstrap service)
+    "status",      # Core status service
+    "launcher",    # Agent launcher
+    "agent-comm",  # Agent communication service
+    "cli",         # CLI connection handler
+]
+
+# Free-tier services (no API cost)
+FREE_SERVICES: set[str] = {
+    "copilot",      # Free tier available
+    "ollama",       # Local, no API cost
+    "filesystem",   # Local MCP server
+}
+
+
+def get_service(name: str, **kwargs: Any) -> Service:
+    """Instantiate a service by name.
+
+    Parameters
+    ----------
+    name:
+        Service name (case-insensitive), e.g. ``"copilot"``, ``"ollama"``.
+        Aliases are resolved automatically.
+    **kwargs:
+        Forwarded to the service's ``__init__``.  Common ones:
+        ``model``, ``api_key``, ``host``, ``command`` (for MCP).
+
+    Raises
+    ------
+    ValueError
+        If the service name is unknown.
+    ImportError
+        If a required SDK package is not installed.
+    """
+    key = name.lower().strip()
+    key = _ALIASES.get(key, key)
+
+    entry = REGISTRY.get(key)
+    if entry is None:
+        services = ", ".join(sorted(REGISTRY))
+        aliases = ", ".join(f"{alias}→{target}" for alias, target in sorted(_ALIASES.items()))
+        raise ValueError(
+            f"Unknown service {name!r}. Available services: {services}. "
+            f"Aliases: {aliases}"
+        )
+
+    module_path, class_name, _, _ , _ = entry
+    module = importlib.import_module(module_path)
+    cls = getattr(module, class_name)
+    return cls(**kwargs)
+
+
+def list_services(service_type: str | None = None, include_test: bool = False) -> list[str]:
+    """Return sorted list of registered services, optionally filtered by type.
+
+    Test-only services (``mock``, ``mock-tool``) are excluded by default.
+    Pass ``include_test=True`` to include them (used by the test suite).
+    """
+    return sorted([
+        name for name, (_, _, st, _, test_only) in REGISTRY.items()
+        if (not test_only or include_test)
+        and (service_type is None or st == service_type)
+    ])
+
+
+def list_default_services() -> list[str]:
+    """Return list of services that start by default."""
+    return DEFAULT_SERVICES.copy()
+
+
+def service_info() -> list[dict[str, Any]]:
+    """Return metadata about all non-test services for display in the CLI."""
+    rows = []
+    for name, (module, cls_name, service_type, is_default, test_only) in sorted(REGISTRY.items()):
+        if test_only:
+            continue
+        rows.append(
+            {
+                "name": name,
+                "type": service_type,
+                "free": name in FREE_SERVICES,
+                "default": is_default,
+                "module": module,
+                "available": _is_available(name),
+            }
+        )
+    return rows
+
+
+def get_service_info(name: str) -> dict[str, Any] | None:
+    """Get detailed info about a specific service."""
+    entry = REGISTRY.get(name.lower())
+    if not entry:
+        return None
+
+    module_path, class_name, service_type, is_default, _ = entry
+    return {
+        "name": name,
+        "type": service_type,
+        "module": module_path,
+        "class": class_name,
+        "default": is_default,
+        "free": name in FREE_SERVICES,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Service Discovery - collect all tools/capabilities for LLMs
+# ---------------------------------------------------------------------------
+
+def discover_all_capabilities(**service_kwargs: Any) -> list[dict[str, Any]]:
+    """Collect all capabilities/tools from all registered services.
+
+    This provides a complete tool list that can be provided to LLMs.
+    Each service is instantiated and its capabilities are collected.
+
+    Parameters
+    ----------
+    **service_kwargs:
+        Optional keyword arguments passed to service constructors
+        (e.g., model="llama3.2", api_key="xxx")
+
+    Returns
+    -------
+    List of tool dictionaries with keys: name, description, input_schema, service_type, service_id
+    """
+    all_tools = []
+
+    for service_name in list_services():
+        try:
+            service = get_service(service_name, **service_kwargs)
+            capabilities = service.capabilities
+
+            for cap in capabilities:
+                tool_dict = {
+                    "name": cap.name,
+                    "description": cap.description,
+                    "input_schema": cap.input_schema,
+                    "service_type": service.service_type,
+                    "service_id": service.service_id,
+                }
+                all_tools.append(tool_dict)
+        except Exception:
+            # Skip services that fail to instantiate (missing dependencies, etc.)
+            continue
+
+    return all_tools
+
+
+def discover_capabilities_by_filter(
+    service_type: str | None = None,
+    name_pattern: str | None = None,
+    **service_kwargs: Any
+) -> list[dict[str, Any]]:
+    """Discover capabilities with filtering support.
+
+    Parameters
+    ----------
+    service_type:
+        Filter by service type (llm, mcp, a2a, builtin)
+    name_pattern:
+        Filter tool names by pattern (e.g., "file" for file operations)
+    **service_kwargs:
+        Optional keyword arguments passed to service constructors
+
+    Returns
+    -------
+    Filtered list of tool dictionaries
+    """
+    all_tools = discover_all_capabilities(**service_kwargs)
+
+    filtered = all_tools
+    if service_type:
+        filtered = [t for t in filtered if t["service_type"] == service_type]
+
+    if name_pattern:
+        pattern_lower = name_pattern.lower()
+        filtered = [t for t in filtered if pattern_lower in t["name"].lower()]
+
+    return filtered
+
+
+def get_tool_schema_for_llm(**service_kwargs: Any) -> list[dict[str, Any]]:
+    """Get tool schemas formatted for LLM function calling.
+
+    Returns tools in the standard format expected by most LLM providers:
+    [{"name": str, "description": str, "parameters": dict}, ...]
+
+    Parameters
+    ----------
+    **service_kwargs:
+        Optional keyword arguments passed to service constructors
+    """
+    capabilities = discover_all_capabilities(**service_kwargs)
+
+    llm_tools = []
+    for cap in capabilities:
+        tool = {
+            "name": cap["name"],
+            "description": cap["description"],
+            "parameters": cap["input_schema"] or {},
+        }
+        llm_tools.append(tool)
+
+    return llm_tools
+
