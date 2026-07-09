@@ -9,8 +9,7 @@ Usage
     anthropic = get_service("anthropic")
 
     # Services (all accessed via MCP)
-    filesystem = get_service("filesystem", command="uvicorn mcp-server")
-    remote = get_service("remote-mars", url="http://localhost:8000")
+    federation = get_service("federation", url="http://localhost:8000")
 
     print(list_services())
     # ['anthropic', 'ollama', 'copilot', 'filesystem', 'status', ...]

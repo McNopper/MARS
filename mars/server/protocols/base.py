@@ -36,7 +36,7 @@ class ProtocolInfo:
 
 class ProtocolAdapterError(Exception):
     """Base exception for protocol adapter errors"""
-    def __init__(self, message: str, protocol: str, details: Optional[Dict[str, Any]] = None):
+    def __init__(self, message: str, protocol: str = "unknown", details: Optional[Dict[str, Any]] = None):
         self.message = message
         self.protocol = protocol
         self.details = details or {}

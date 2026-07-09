@@ -140,21 +140,15 @@ class LauncherService(BuiltinService):
             return f"Unknown launcher tool: {tool_name}"
 
     async def _spawn_agent(self, service_name: str, model: str | None = None, agent_name: str | None = None) -> dict[str, Any]:
-        """Spawn a new agent with the specified service and model."""
-        # This would interface with the launcher agent logic
-        # For now, return a placeholder response
+        """Spawn a new agent. Not yet implemented — use the /spawn CLI command."""
         return {
-            "service": service_name,
-            "model": model or "default",
-            "agent_name": agent_name or f"agent.{service_name}",
-            "message": f"Agent {agent_name or service_name} would be spawned with {service_name} service"
+            "error": "not_implemented",
+            "message": "LauncherService.spawn_agent is not yet wired to the server spawn path. Use /spawn from the CLI."
         }
 
     async def _launch_agent(self, service: str, model: str | None = None, kickoff: str | None = None) -> dict[str, Any]:
-        """Launch an agent with the given configuration."""
+        """Launch an agent. Not yet implemented — use the /spawn CLI command."""
         return {
-            "service": service,
-            "model": model or "default",
-            "kickoff": kickoff or "",
-            "message": f"Agent would be launched with {service} service and model {model}"
+            "error": "not_implemented",
+            "message": "LauncherService.launch_agent is not yet wired to the server spawn path. Use /spawn from the CLI."
         }

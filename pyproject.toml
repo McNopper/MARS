@@ -24,8 +24,6 @@ dependencies = [
 mars = "mars.cli.main:main"
 mars-server = "mars.server.main:main"
 mars-llm-wire-agent = "mars.server.services.llm_wire_agent:main"
-mars-agent-status = "mars.server.agents.status_agent:main"
-mars-agent-launcher = "mars.server.agents.launcher_agent:main"
 
 [project.optional-dependencies]
 dev = [

@@ -123,7 +123,8 @@ Everything else — builtin utilities, external MCP servers, A2A peers. All disc
 | `launcher` | ✅ | Spawn new LLM agents at runtime |
 | `cli` | ✅ | CLI connection management |
 | `filesystem` | — | MCP filesystem server (stdio, requires config) |
-| `remote-mars` | — | A2A peer connection to remote MARS nodes (requires config) |
+| `profiler` | — | Performance monitoring — uptime and metrics |
+| `federation` | — | A2A peer connection to remote MARS nodes (requires config) |
 
 ## Architecture
 
