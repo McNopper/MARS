@@ -20,7 +20,7 @@ def _agent_id_to_service(agent_id: str) -> str | None:
 
     ``llm.ollama.qwen3:4b@1``  → ``"ollama"``
     ``svc.filesystem@1``        → ``"filesystem"``
-    ``a2a.remote-mars@1``       → ``"remote-mars"``
+    ``a2a.federation@1``        → ``"federation"``
     """
     parts = agent_id.split(".")
     if len(parts) >= 2:

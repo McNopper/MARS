@@ -51,23 +51,10 @@ def _available_ollama() -> bool:
 
 
 def _available_copilot() -> bool:
-    """True if a Copilot OAuth token is resolvable without network I/O."""
-    import contextlib
+    """Copilot requires a paid subscription and explicit API credentials."""
     for var in ("COPILOT_API_KEY", "GH_COPILOT_TOKEN", "GITHUB_COPILOT_TOKEN"):
         if os.environ.get(var):
             return True
-    # Try gh auth token (fast subprocess, no network)
-    import shutil
-    import subprocess
-    if not shutil.which("gh"):
-        return False
-    with contextlib.suppress(Exception):
-        result = subprocess.run(
-            ["gh", "auth", "token"],
-            capture_output=True, text=True, timeout=2,
-            env={k: v for k, v in os.environ.items() if k != "GITHUB_TOKEN"},
-        )
-        return bool(result.stdout.strip())
     return False
 
 
@@ -88,7 +75,7 @@ _AVAILABILITY: dict[str, Any] = {
     # MCP services need a user-supplied command — not usable out of the box
     "filesystem":  _not_available,
     # A2A needs a peer address to connect to
-    "remote-mars": _not_available,
+    "federation":  _not_available,
 }
 
 
@@ -197,7 +184,7 @@ REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
     "filesystem":   ("mars.server.services.mcp.service",              "MCPService",                   "service", False, False),
     # -- A2A peers (require peer address) --
     # A2A peer connection to a remote MARS instance
-    "remote-mars":  ("mars.server.services.a2a.service",              "A2AService",                   "service", False, False),
+    "federation":   ("mars.server.services.a2a.service",              "A2AService",                   "service", False, False),
 }
 
 # Aliases
