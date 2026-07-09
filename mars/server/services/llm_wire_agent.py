@@ -341,6 +341,55 @@ async def run_llm_agent(
             return
         await send_json(writer, {"t": "msg", "target": from_id, "text": reply_text})
 
+    async def _compact_history(for_id: str) -> None:
+        """Generate an internal summary and replace history with [system, summary]."""
+        hist = histories[for_id]
+        turns = [m for m in hist if m.role in ("user", "assistant") and m.content]
+        if not turns:
+            await send_json(writer, {"t": "msg", "target": for_id,
+                                     "text": "📝 Nothing to compact."})
+            return
+        compact_input = "\n".join(
+            f"{'User' if m.role == 'user' else 'Assistant'}: {m.content[:400]}"
+            for m in turns[-40:]
+        )
+        summarize_history = [
+            LLMMessage(role="system", content=(
+                "You are a helpful assistant. Summarize the following conversation "
+                "in 2-3 paragraphs, preserving all important facts, decisions, and context."
+            )),
+            LLMMessage(role="user", content=compact_input),
+        ]
+        try:
+            response = await asyncio.wait_for(llm.complete(summarize_history), timeout=30.0)
+            summary = str(response.content or "(no summary)")
+        except Exception as exc:
+            summary = f"(compact failed: {exc})"
+        system_msg = hist[0] if hist and hist[0].role == "system" else \
+            LLMMessage(role="system", content=_effective_system_prompt)
+        histories[for_id] = [
+            system_msg,
+            LLMMessage(role="assistant",
+                       content=f"[Previous conversation summary]\n{summary}"),
+        ]
+        await send_json(writer, {"t": "msg", "target": for_id,
+                                 "text": f"📝 **History compacted.**\n\n{summary}"})
+
+    async def _handle_ask(from_id: str, text: str) -> None:
+        """Ephemeral one-off question — runs LLM without mutating conversation history."""
+        hist = histories[from_id]
+        # Shallow-copy current history and append the question temporarily
+        temp = list(hist) + [LLMMessage(role="user", content=text)]
+        await send_json(writer, {"t": "fsm", "fsm_state": "THINKING"})
+        async with _global_lock:
+            try:
+                response = await asyncio.wait_for(llm.complete(temp), timeout=60.0)
+                reply = str(response.content or "")
+            except Exception as exc:
+                reply = f"Error: {exc}"
+        await send_json(writer, {"t": "fsm", "fsm_state": "IDLE"})
+        await send_json(writer, {"t": "msg", "target": from_id, "text": reply})
+
     try:
         async for ev in iter_frames(reader):
 
@@ -381,6 +430,43 @@ async def run_llm_agent(
             if etype == "client_disconnect":
                 cid = str(ev.get("name") or "")
                 _deregister_agent(cid)
+                continue
+
+            # --- ctrl: server-side history manipulation ---
+            if etype == "ctrl":
+                ctrl_cmd = str(ev.get("cmd") or "")
+                for_id   = str(ev.get("for") or "")
+                if ctrl_cmd == "rewind":
+                    hist = histories[for_id]
+                    removed = 0
+                    while removed < 2 and len(hist) > 1:
+                        if hist[-1].role in ("user", "assistant"):
+                            hist.pop()
+                            removed += 1
+                        else:
+                            break
+                elif ctrl_cmd == "compact":
+                    asyncio.create_task(_compact_history(for_id))
+                elif ctrl_cmd == "set_system":
+                    content = str(ev.get("content") or "")
+                    if content:
+                        if histories[for_id] and histories[for_id][0].role == "system":
+                            histories[for_id][0] = LLMMessage(
+                                role="system",
+                                content=content + "\n\n" + histories[for_id][0].content,
+                            )
+                        else:
+                            histories[for_id].insert(
+                                0, LLMMessage(role="system", content=content)
+                            )
+                continue
+
+            # --- ask: ephemeral question, no history mutation ---
+            if etype == "ask":
+                from_id = str(ev.get("from") or "")
+                text    = str(ev.get("text") or "")
+                if from_id and text:
+                    asyncio.create_task(_handle_ask(from_id, text))
                 continue
 
             if etype != "msg":

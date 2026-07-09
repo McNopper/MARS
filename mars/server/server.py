@@ -652,6 +652,31 @@ class MARSServer:
                 models[name] = []
         self._send_to(session, {"t": "models", "models": models})
 
+    def _get_wire_agent_session(self, session: ClientSession) -> ClientSession | None:
+        """Return the wire-agent session for the CLI session's current agent, or None.
+
+        Sends an error status to *session* and returns None when:
+        - no current agent is selected
+        - the current agent is a builtin (not a wire process session)
+        """
+        target_id = session.current_agent
+        if not target_id:
+            self._send_to(session, {
+                "t": "status",
+                "text": "No active agent — use /spawn to start one.",
+                "style": "bold yellow",
+            })
+            return None
+        target = self._sessions_by_id.get(target_id)
+        if target is None:
+            self._send_to(session, {
+                "t": "status",
+                "text": f"Agent '{target_id}' is a builtin service — history commands require an LLM agent.",
+                "style": "bold yellow",
+            })
+            return None
+        return target
+
     async def _handle_structured_command(
         self, session: ClientSession, cmd: str, msg: dict[str, Any]
     ) -> None:
@@ -667,6 +692,29 @@ class MARSServer:
             return
         if cmd == "get_models":
             asyncio.create_task(self._fetch_and_send_models(session))
+            return
+        # History-manipulation commands forwarded to the current wire agent
+        if cmd in ("rewind", "compact", "set_system", "ask"):
+            target = self._get_wire_agent_session(session)
+            if target is None:
+                return
+            if cmd == "ask":
+                self._send_to(target, {
+                    "t": "ask",
+                    "from": session.agent_id,
+                    "text": str(msg.get("text") or ""),
+                })
+            elif cmd == "set_system":
+                self._send_to(target, {
+                    "t": "ctrl", "cmd": "set_system",
+                    "for": session.agent_id,
+                    "content": str(msg.get("content") or ""),
+                })
+            else:
+                self._send_to(target, {
+                    "t": "ctrl", "cmd": cmd,
+                    "for": session.agent_id,
+                })
             return
         text = str(msg.get("text") or "").strip()
         if text:

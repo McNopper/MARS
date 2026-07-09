@@ -295,15 +295,8 @@ def _cmd_context(state: Any) -> None:
 
 
 def _cmd_instructions(state: Any, writer: Any) -> None:
-    """Load AGENTS.md / CLAUDE.md / copilot-instructions.md and send to current agent (``/instructions``).
-
-    .. note::
-        TODO: This sends instruction files as a plain user message, not as a true
-        system-prompt injection.  A proper implementation would prepend the content
-        to the agent's system prompt via a wire command (requires server support to
-        insert/replace the system message in the agent's history).
-    """
-    if not (target := _require_agent(state)):
+    """Load AGENTS.md / CLAUDE.md / copilot-instructions.md and inject into system prompt."""
+    if not _require_agent(state):
         return
     candidates = [
         _Path.cwd() / "AGENTS.md",
@@ -321,7 +314,8 @@ def _cmd_instructions(state: Any, writer: Any) -> None:
     instructions = "\n\n".join(
         f"# From {p.name}\n{content}" for p, content in found
     )
-    _send_msg(writer, target, f"[SYSTEM INSTRUCTIONS]\n{instructions}")
+    # Prepend to the wire agent's system prompt (enforced server-side)
+    writer.write(encode_frame({"t": "cmd", "cmd": "set_system", "content": instructions}))
     state.status_line = (
         f"📋 Loaded instructions from: "
         f"{', '.join(p.name for p, _ in found)}"
@@ -329,29 +323,17 @@ def _cmd_instructions(state: Any, writer: Any) -> None:
 
 
 def _cmd_compact(state: Any, writer: Any) -> None:
-    """Summarize and compact conversation history (``/compact``).
+    """Compact conversation history server-side (``/compact``).
 
-    .. note::
-        TODO: This only clears the *client-side* chat deque.  The server-side
-        agent still has the full history in its LLM context window.  A proper
-        implementation needs a ``/compact`` wire command that asks the server to
-        replace the agent's message list with a summary (requires server support).
+    Asks the wire agent to generate an internal summary and replace its full
+    history with [system-prompt, summary].  The summary is sent back as a
+    message so the user can see what was retained.
     """
-    if not (target := _require_agent(state)):
+    if not _require_agent(state):
         return
-    rec = state.agents[target]
-    history = "\n".join(
-        f"{'User' if m.direction == 'out' else 'Agent'}: {m.content[:200]}"
-        for m in list(rec.chat)[-20:]
-    )
-    prompt = (
-        "Please summarize the following conversation in 2-3 paragraphs, "
-        "keeping all important facts, decisions, and context:\n\n"
-        + history
-    )
-    _send_msg(writer, target, prompt)
-    rec.chat.clear()
-    state.status_line = "📝 Compacting… reply will replace history."
+    writer.write(encode_frame({"t": "cmd", "cmd": "compact"}))
+    state.agents[state.current_agent].chat.clear()
+    state.status_line = "📝 Compacting…"
 
 
 def _cmd_share(state: Any, args: str = "") -> None:
@@ -376,18 +358,15 @@ def _cmd_share(state: Any, args: str = "") -> None:
     state.status_line = f"📤 Session exported to {filename}"
 
 
-def _cmd_rewind(state: Any) -> None:
+def _cmd_rewind(state: Any, writer: Any | None = None) -> None:
     """Remove the last user + agent message pair (``/rewind``).
 
-    .. note::
-        TODO: This only removes messages from the *client-side* display deque.
-        The server-side agent retains the full history in its LLM context.
-        A proper implementation requires a ``/rewind`` wire command so the server
-        can drop the last turn from the agent's message list before the next call.
+    Trims the client-side display deque and, when *writer* is provided,
+    sends a wire command so the server-side agent also drops the last turn.
     """
-    if not (target := _require_agent(state)):
+    if not _require_agent(state):
         return
-    rec = state.agents[target]
+    rec = state.agents[state.current_agent]
     msgs = list(rec.chat)
     removed = 0
     while msgs and removed < 2:
@@ -399,6 +378,8 @@ def _cmd_rewind(state: Any) -> None:
     except ImportError:
         maxlen = 200
     rec.chat = deque(msgs, maxlen=maxlen)
+    if writer is not None:
+        writer.write(encode_frame({"t": "cmd", "cmd": "rewind"}))
     state.status_line = f"⏪ Rewound {removed} message(s)."
 
 
@@ -427,23 +408,18 @@ def _cmd_search(state: Any, query: str) -> None:
 
 
 def _cmd_ask(state: Any, writer: Any, question: str) -> None:
-    """Send a one-off side question without polluting history (``/ask <question>``).
+    """Send a one-off side question without adding it to history (``/ask <question>``).
 
-    .. note::
-        TODO: The "do not add to history" instruction is only a text hint in the
-        prompt — it is not enforced by the server.  A proper implementation would
-        use a separate ephemeral context or a dedicated wire flag so the agent's
-        history list is not extended by this exchange.
+    Uses a dedicated wire frame so the server runs the question against the
+    agent's current history but does NOT append either the question or the
+    reply to that history.
     """
     if not question:
         state.status_line = "Usage: /ask <question>"
         return
-    if not (target := _require_agent(state)):
+    if not _require_agent(state):
         return
-    _send_msg(
-        writer, target,
-        f"[ONE-OFF QUESTION — do not add to your conversation history]\n{question}",
-    )
+    writer.write(encode_frame({"t": "cmd", "cmd": "ask", "text": question}))
     state.status_line = f"❓ Asked: {question[:60]}…"
 
 

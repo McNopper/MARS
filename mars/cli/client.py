@@ -217,7 +217,7 @@ class MARSClientTerminal:
         elif cmd == "new":
             _cmd_new(self._state)
         elif cmd == "rewind":
-            _cmd_rewind(self._state)
+            _cmd_rewind(self._state, self._writer)
         elif cmd == "context":
             _cmd_context(self._state)
         elif cmd == "version":
