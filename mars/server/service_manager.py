@@ -16,8 +16,6 @@ from mars.server.services.registry import AgentSpec, all_specs, resolve_command
 # This ensures subprocesses always run in the correct interpreter even when the
 # console_scripts wrapper is not on PATH (e.g., on Windows or in editable installs).
 _SCRIPT_TO_MODULE: dict[str, str] = {
-    "mars-agent-status":    "mars.server.agents.status_agent",
-    "mars-agent-launcher":  "mars.server.agents.launcher_agent",
     "mars-llm-wire-agent":  "mars.server.services.llm_wire_agent",
 }
 

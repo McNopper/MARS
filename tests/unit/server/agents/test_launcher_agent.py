@@ -1,16 +1,10 @@
-"""Unit tests for mars.server.agents.launcher_agent.
-
-Covers:
-- _parse_spawn_request: positional and JSON formats (returns a dict of
-  spawn-envelope args), including the Claude-only knobs and role-isolation
-  allow-list added for first-class Claude integration.
-"""
+"""Unit tests for _parse_spawn_request in mars.server.services.builtin.launcher_service."""
 from __future__ import annotations
 
 import json
 
 
-from mars.server.services.builtin.launcher import _parse_spawn_request
+from mars.server.services.builtin.launcher_service import _parse_spawn_request
 
 
 class TestParseSpawnRequest:

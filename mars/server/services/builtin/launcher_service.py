@@ -1,14 +1,54 @@
-"""Launcher Service - Unified Service wrapper for the launcher MCP agent.
+"""Launcher Service — agent spawning via the MARS service interface.
 
-This provides a Service interface wrapper around the launcher MCP server agent,
-allowing it to be discovered and used alongside other services in the unified
-architecture.
+Exposes ``spawn_agent`` / ``launch_agent`` capabilities so LLMs can start new
+agents through the standard discovery + call-tool flow.  Also provides
+``_parse_spawn_request`` for parsing freeform spawn text (JSON or positional).
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from mars.server.services.base import BuiltinService, ServiceCapability
+
+
+def _parse_spawn_request(text: str) -> dict[str, Any]:
+    """Parse a spawn request (JSON object or positional) into spawn-envelope args.
+
+    JSON keys: ``provider``, ``model``, ``name``, ``system_prompt``, ``kickoff``,
+    ``max_tokens`` (all providers), the Anthropic-only ``thinking`` /
+    ``cache_prompts``, plus ``allowed_skills`` (or ``skills``) for role isolation.
+    Positional: ``"anthropic"`` or ``"anthropic claude-opus-4-8"``.
+    """
+    text = text.strip()
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            args: dict[str, Any] = {}
+            for key in ("provider", "model", "name", "system_prompt", "kickoff",
+                        "max_tokens"):
+                val = data.get(key)
+                if val not in (None, ""):
+                    args[key] = val
+            if "thinking" in data:
+                args["thinking"] = bool(data["thinking"])
+            if "cache_prompts" in data:
+                args["cache_prompts"] = bool(data["cache_prompts"])
+            skills = data.get("allowed_skills") or data.get("skills")
+            if skills:
+                args["allowed_skills"] = skills
+            if "provider" in args:
+                args["provider"] = str(args["provider"]).lower()
+            return args
+    except Exception:  # noqa: BLE001
+        pass
+    parts = text.split(None, 1)
+    args = {}
+    if parts and parts[0]:
+        args["provider"] = parts[0].lower()
+    if len(parts) > 1:
+        args["model"] = parts[1]
+    return args
 
 
 class LauncherService(BuiltinService):

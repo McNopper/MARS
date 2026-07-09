@@ -81,16 +81,17 @@ class TestLaunchProvider:
 
     @patch("subprocess.Popen")
     def test_resolves_builtin_agent_command_to_module(self, mock_popen: MagicMock) -> None:
+        """mars-llm-wire-agent is still resolved; other well-known scripts run as-is."""
         proc = MagicMock()
         proc.pid = 42
         mock_popen.return_value = proc
 
-        spec = _make_spec()
+        spec = _make_spec(command="mars-llm-wire-agent --server {server}")
         pid, _workdir = _launch_provider(spec, "localhost:7432")
 
         assert pid == 42
         cmd_used = mock_popen.call_args[0][0]
-        assert cmd_used[:3] == [sys.executable, "-m", "mars.server.agents.status_agent"]
+        assert cmd_used[:3] == [sys.executable, "-m", "mars.server.services.llm_wire_agent"]
 
     @patch("subprocess.Popen")
     def test_server_address_substituted_in_command(self, mock_popen: MagicMock) -> None:
