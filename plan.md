@@ -31,7 +31,39 @@ Reference sets (2025):
 |---------|-------------|-------------|
 | `/clear` | Copilot + Claude Code | Alias for `/new` — industry-standard name for "clear chat". Zero-friction. |
 | `/cost` | Claude Code `/cost` | Extend `/context` output to include estimated token cost using the current model's pricing. |
-| `/model [name]` | Copilot CLI `/model` | Change the model on the current agent without stop + re-spawn. Sends a `ctrl set_model` wire frame to the wire agent. |
+| `/model [name]` | Copilot CLI `/model` | Show or change the model on the current agent without stop + re-spawn. Sends `ctrl set_model` to the wire agent. Updates the display label — the agent ID itself stays stable. |
+| `/ctx [n]` | — | Show or set the context-window limit (tokens) for the current agent. No arg = show current. Sends `ctrl set_ctx`. |
+| `/reasoning [level]` | — | Show or set the reasoning effort for the current agent. Levels: `off \| low \| medium \| high \| max`. No arg = show current. Sends `ctrl set_reasoning`. |
+
+### Agent naming change required for `/model`
+
+The current agent ID encodes the model (`llm.ollama.qwen3:4b`). Once the model is changeable at runtime the ID must be **stable** and the model shown separately.
+
+**New scheme:**
+
+| Field | Value | Notes |
+|-------|-------|-------|
+| `agent_id` | `llm.ollama.1`, `llm.zai.2`, … | provider + monotonic instance counter, no model in ID |
+| `AgentRecord.model` | `qwen3:4b` | updated in-place when `/model` is issued |
+| `AgentRecord.max_ctx` | `int \| None` | token limit; `None` = provider default |
+| `AgentRecord.reasoning` | `off \| low \| medium \| high \| max` | reasoning effort; default `medium` |
+| Display label | `ollama-1 / qwen3:4b` | shown in services panel and connections panel |
+
+**Wire frames added to `llm_wire_agent.py`:**
+
+```
+ctrl set_model    {"model": "qwen3:8b"}
+ctrl set_ctx      {"max_ctx": 8192}          # or null to reset to default
+ctrl set_reasoning {"level": "high"}
+```
+
+**`AgentRecord` new fields** (add to `agent_record.py`):
+```python
+max_ctx: int | None = None      # None = provider default
+reasoning: str = "medium"       # off | low | medium | high | max
+```
+
+**Wire agent internals:** `_llm` is swapped out on `set_model` — create a new provider instance with the same kwargs but updated `model=`. On `set_ctx` / `set_reasoning`, store the values and pass them into every `llm.complete()` call via kwargs.
 
 ### Keep as-is (already covered)
 
