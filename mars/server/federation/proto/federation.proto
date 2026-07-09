@@ -1,0 +1,199 @@
+// MARS Federation Protocol Definition
+// Protocol Buffers schema for MARS-MARS node federation
+syntax = "proto3";
+
+package mars.federation;
+
+// ============================================================================
+// Core Federation Messages
+// ============================================================================
+
+// Node handshake - initial connection establishment
+message NodeHandshake {
+  string node_id = 1;
+  string version = 2;
+  repeated AgentInfo agents = 3;
+  repeated Capability capabilities = 4;
+  string timestamp = 5;
+  map<string, string> metadata = 6;
+}
+
+// Agent information
+message AgentInfo {
+  string agent_id = 1;
+  string name = 2;
+  string agent_type = 3;
+  string status = 4;
+  repeated string capabilities = 5;
+  map<string, string> metadata = 6;
+}
+
+// Node capability
+message Capability {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  map<string, string> parameters = 4;
+}
+
+// Agent announcement - lifecycle events
+message AgentAnnouncement {
+  string node_id = 1;
+  string agent_id = 2;
+  string event = 3;  // "spawn" | "despawn"
+  AgentInfo agent_info = 4;
+  string timestamp = 5;
+}
+
+// Federated message - cross-node communication
+message FederatedMessage {
+  string source_agent = 1;
+  string target_agent = 2;
+  bytes payload = 3;
+  int64 timestamp = 4;
+  string message_id = 5;
+  map<string, string> metadata = 6;
+}
+
+// Federated response - reply from remote agent
+message FederatedResponse {
+  string source_agent = 1;
+  string target_agent = 2;
+  bytes payload = 3;
+  int64 timestamp = 4;
+  string message_id = 5;
+  string in_reply_to = 6;
+  map<string, string> metadata = 7;
+}
+
+// Artifact transfer - cross-node artifact sharing
+message ArtifactTransfer {
+  string artifact_id = 1;
+  string source_node = 2;
+  bytes content = 3;
+  repeated string tags = 4;
+  string mime_type = 5;
+  int64 timestamp = 6;
+  map<string, string> metadata = 7;
+}
+
+// Keepalive - connection health monitoring
+message Keepalive {
+  string node_id = 1;
+  int64 timestamp = 2;
+  int64 sequence = 3;
+}
+
+// Keepalive acknowledgment
+message KeepaliveAck {
+  string node_id = 1;
+  int64 timestamp = 2;
+  int64 sequence = 3;
+}
+
+// ============================================================================
+// Federation Envelope
+// ============================================================================
+
+// Federation message envelope - wraps all federation messages
+message FederationEnvelope {
+  string message_type = 1;  // Message type discriminator
+  bytes message_data = 2;    // Serialized message (one of the above types)
+  string request_id = 3;     // For request/response correlation
+  int64 timestamp = 4;
+  map<string, string> headers = 5;
+}
+
+// ============================================================================
+// Node Registry Messages
+// ============================================================================
+
+// Node registration
+message NodeRegistration {
+  string node_id = 1;
+  string endpoint = 2;  // Connection endpoint (host:port)
+  string version = 3;
+  repeated Capability capabilities = 4;
+  int64 registered_at = 5;
+  map<string, string> metadata = 6;
+}
+
+// Node heartbeat
+message NodeHeartbeat {
+  string node_id = 1;
+  int64 timestamp = 2;
+  int32 agent_count = 3;
+  int32 active_connections = 4;
+  map<string, string> status = 5;
+}
+
+// ============================================================================
+// Error Handling
+// ============================================================================
+
+// Federation error
+message FederationError {
+  string code = 1;
+  string message = 2;
+  string details = 3;
+  string request_id = 4;
+  int64 timestamp = 5;
+  map<string, string> context = 6;
+}
+
+// ============================================================================
+// Service Discovery (Optional)
+// ============================================================================
+
+// Service discovery request
+message ServiceDiscoveryRequest {
+  string service_type = 1;  // Filter by service type
+  repeated string capabilities = 2;  // Required capabilities
+  map<string, string> filters = 3;  // Additional filters
+}
+
+// Service discovery response
+message ServiceDiscoveryResponse {
+  repeated NodeInfo nodes = 1;
+  string request_id = 2;
+  int64 timestamp = 3;
+}
+
+// Node information for discovery
+message NodeInfo {
+  string node_id = 1;
+  string endpoint = 2;
+  string version = 3;
+  repeated string services = 4;
+  int32 agent_count = 5;
+  map<string, string> metadata = 6;
+}
+
+// ============================================================================
+// Security (Optional - for future TLS implementation)
+// ============================================================================
+
+// Authentication challenge
+message AuthChallenge {
+  string challenge_id = 1;
+  bytes challenge_data = 2;
+  string method = 3;  // "mtls" | "token" | "none"
+  int64 timestamp = 4;
+}
+
+// Authentication response
+message AuthResponse {
+  string challenge_id = 1;
+  bytes response_data = 2;
+  string node_id = 3;
+  int64 timestamp = 4;
+}
+
+// Authentication result
+message AuthResult {
+  bool success = 1;
+  string node_id = 2;
+  string message = 3;
+  int64 timestamp = 4;
+  map<string, string> metadata = 5;
+}

@@ -1,23 +1,22 @@
-"""Newline-delimited JSON wire framing shared across MARS.
+"""Wire framing for MARS — legacy JSON-line and multi-protocol.
 
-MARS components (CLI client, server, federation, MCP adapter, service agents)
-all speak the same transport: one JSON object per line, terminated by ``\\n``.
-Historically every component hand-rolled the same two operations —
-``(json.dumps(x) + "\\n").encode()`` to write and
-``json.loads(await reader.readline())`` to read — at ~20 call sites.
+MARS speaks one transport: newline-delimited JSON.  All components share the
+same primitives so encoding, decoding, and edge-cases (EOF, malformed JSON,
+non-serialisable values) are handled once.
 
-This module centralises that framing so encoding, decoding and the edge cases
-(EOF, blank lines, malformed JSON, non-serialisable values) are handled once
-and identically everywhere.
+The module has two layers:
 
-The helpers come in two layers:
+* **Legacy (default)** — one JSON object per line; used by the TCP bus between
+  the server and CLI/LLM clients.
+* **Multi-protocol** — an optional magic-header prefix that identifies the
+  protocol before the JSON payload, used when multiple named protocols share
+  the same transport (AG-UI, A2A, MCP, MARS federation).
 
-* **Primitives** — :func:`encode_frame` / :func:`decode_frame` are pure and
-  synchronous. Use them when you already own the read/write flow (e.g. a
-  ``writer.write(...)`` inside custom error handling).
-* **Stream helpers** — :func:`write_frame`, :func:`read_frame` and
-  :func:`iter_frames` operate on :class:`asyncio.StreamReader` /
-  :class:`asyncio.StreamWriter` and encapsulate the common loop.
+``WireProtocol`` and the multi-protocol helpers live here so that *both* the
+server and the CLI can import them without introducing circular dependencies
+(``common`` must never import from ``server``).  Cross-protocol type
+conversions that require ``ProtocolType`` from ``mars.server.protocols.base``
+live in that module instead.
 """
 
 from __future__ import annotations
@@ -25,15 +24,105 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from enum import Enum
+from typing import Any, Optional
 
 __all__ = [
+    "WireProtocol",
+    "PROTOCOL_MAGIC_HEADERS",
     "encode_frame",
     "decode_frame",
+    "encode_frame_with_protocol",
+    "decode_frame_with_protocol",
+    "detect_protocol_from_data",
     "write_frame",
     "read_frame",
     "iter_frames",
 ]
+
+
+class WireProtocol(Enum):
+    """Named wire-level protocols that prefix their frames with a magic header."""
+    AG_UI = "ag_ui"   # AG-UI — human↔agent interaction
+    A2A   = "a2a"     # A2A   — agent↔agent task delegation
+    MCP   = "mcp"     # MCP   — tool/resource access
+    MARS  = "mars"    # MARS  — server federation
+
+
+# Magic header bytes: ``detect_protocol_from_data`` scans these in order.
+PROTOCOL_MAGIC_HEADERS: dict[WireProtocol, bytes] = {
+    WireProtocol.AG_UI: b"AG-UI/",
+    WireProtocol.A2A:   b"A2A-JSONRPC/",
+    WireProtocol.MCP:   b"MCP-STDIO/",
+    WireProtocol.MARS:  b"MARS-FED/",
+}
+
+
+def detect_protocol_from_data(data: bytes | bytearray) -> WireProtocol:
+    """Return the ``WireProtocol`` whose magic header *data* starts with.
+
+    Raises :class:`ValueError` when *data* is empty or no header matches.
+    """
+    if not data:
+        raise ValueError("Cannot detect protocol from empty data")
+    for protocol, header in PROTOCOL_MAGIC_HEADERS.items():
+        if data.startswith(header):
+            return protocol
+    raise ValueError("Unknown protocol — no recognised magic header in data")
+
+
+def encode_frame_with_protocol(
+    payload: Any,
+    protocol: WireProtocol,
+    *,
+    protocol_version: Optional[str] = None,
+    default: Callable[[Any], Any] | None = str,
+) -> bytes:
+    """Serialise *payload* with the named protocol's magic-header framing.
+
+    Format on the wire::
+
+        MAGIC_HEADER/<version>\\n
+        <json>\\n
+
+    Two ``readline()`` calls are needed to read one such frame; the server
+    reads the header line first, detects the protocol, then reads the JSON.
+    """
+    header = PROTOCOL_MAGIC_HEADERS.get(protocol)
+    if header is None:
+        raise ValueError(f"Unsupported protocol: {protocol!r}")
+    version = protocol_version or "1.0.0"
+    json_str = json.dumps(payload, default=default)
+    return f"{header.decode()}{version}\n{json_str}\n".encode("utf-8")
+
+
+def decode_frame_with_protocol(
+    raw: bytes | bytearray,
+) -> tuple[WireProtocol, dict[str, Any]]:
+    """Decode a magic-header framed message produced by :func:`encode_frame_with_protocol`.
+
+    *raw* should contain the full two-line frame (header line + JSON line).
+    Returns ``(protocol, message_dict)``.
+
+    Raises :class:`ValueError` on any parse failure.
+    """
+    if not raw:
+        raise ValueError("Cannot decode empty data")
+    protocol = detect_protocol_from_data(raw)
+    try:
+        text = bytes(raw).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"UTF-8 decode error: {exc}") from exc
+    lines = text.split("\n", 2)
+    if len(lines) < 2 or not lines[1].strip():
+        raise ValueError(f"Invalid {protocol.value} frame: expected header line + JSON line")
+    try:
+        obj = json.loads(lines[1].strip())
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"JSON decode error in {protocol.value} frame: {exc}") from exc
+    if not isinstance(obj, dict):
+        raise ValueError(f"{protocol.value} frame payload must be a JSON object")
+    return protocol, obj
 
 
 def encode_frame(payload: Any, *, default: Callable[[Any], Any] | None = str) -> bytes:

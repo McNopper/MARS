@@ -73,8 +73,8 @@ class TestSwitchCommand:
         assert ev["current_agent"] == agent_id
         h_writer.close()
 
-    async def test_switch_unknown_agent_still_switches(self, unused_tcp_port):
-        """/switch accepts any id (server does not validate existence)."""
+    async def test_switch_unknown_agent_rejected(self, unused_tcp_port):
+        """/switch rejects unknown agents — only valid chat targets are accepted."""
         _server = await helpers.start_server(unused_tcp_port)
         h_reader, h_writer = await helpers.connect(unused_tcp_port, "cli-user")
         await helpers.read_until(h_reader, t="welcome")
@@ -82,8 +82,8 @@ class TestSwitchCommand:
         helpers.send_cmd(h_writer, "/switch nonexistent-agent")
         await h_writer.drain()
 
-        ev = await helpers.read_until(h_reader, t="switch", timeout=3.0)
-        assert ev["current_agent"] == "nonexistent-agent"
+        ev = await helpers.read_until(h_reader, t="status", timeout=3.0)
+        assert "not a chat target" in ev.get("text", "").lower()
         h_writer.close()
 
 

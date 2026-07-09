@@ -1,6 +1,40 @@
 # 🌌 MARS — Multi-Agent Runtime System
 
-MARS is a **minimal, standards-aligned runtime** where humans and heterogeneous AI agents share one live message bus, discover each other's skills, and collaborate.
+MARS is a **minimal, standards-aligned runtime** where humans and heterogeneous AI agents share one live message bus, discover each other's skills, and collaborate using standardized protocols.
+
+## 🚀 Standard Protocols
+
+MARS implements industry-standard protocols for all communication:
+
+### 🔗 Protocol Standards Used
+
+- **[AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui)** - Human CLI to agent server communication
+- **[A2A Protocol](https://github.com/a2aproject/A2A)** - Agent-to-agent communication  
+- **[MCP (Model Context Protocol)](https://modelcontextprotocol.io/)** - Service agent and tool communication
+- **MARS Federation Protocol** - MARS-MARS federation (proprietary, based on Protocol Buffers)
+
+### 📡 Protocol Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   MARS Protocol Stack                  │
+├─────────────────────────────────────────────────────┤
+│  Human-CLI          │  AG-UI Protocol                 │
+│  Agent-Agent        │  A2A Protocol (JSON-RPC 2.0)    │
+│  Service-Agent      │  MCP Protocol (stdio)           │
+│  MARS-MARS          │  MARS Protocol (Protobuf)        │
+├─────────────────────────────────────────────────────┤
+│  Wire Layer         │  Multi-protocol framing         │
+│  Protocol Adapters  │  Unified adapter interface      │
+└─────────────────────────────────────────────────────┘
+```
+
+### 🔗 Standard Specifications
+
+- **[AG-UI Specification](https://github.com/ag-ui-protocol/ag-ui)** - Event-based agent-human interaction
+- **[A2A Specification](https://a2a-protocol.org/v0.3.0/specification/)** - Agent interoperability protocol
+- **[MCP Specification](https://modelcontextprotocol.io/docs/getting-started/intro)** - Model Context Protocol for tools
+- **[MCP SDK](https://github.com/modelcontextprotocol/python-sdk)** - Python SDK implementation
 
 ## The Unified Architecture Concept
 
@@ -10,19 +44,19 @@ MARS unifies all capabilities — LLMs, tools, data sources, connections — as 
 
 ## Bootstrapping LLMs with Discovery
 
-**Key insight:** LLMs don't need to know all services upfront. They only need to know about the **Discovery Service**.
+**Key insight:** LLMs don't need to know all services upfront. They only need to know about the **Discovery Service** (communicated via MCP).
 
 1. **Initial Bootstrap**: LLM is told only about the Discovery Service
-2. **Dynamic Discovery**: LLM queries Discovery Service for available tools
+2. **Dynamic Discovery**: LLM queries Discovery Service for available tools via MCP
 3. **Runtime Updates**: Services can appear/disappear during runtime
-4. **Tool Execution**: LLM calls discovered service tools through the wire protocol
+4. **Tool Execution**: LLM calls discovered service tools through MCP protocol
 
 ```
-LLM → "What tools exist?" 
-LLM → Discovery Service.discover_all_capabilities()
+LLM → "What tools exist?"
+LLM → Discovery Service.discover_all_capabilities() [via MCP]
 Discovery Service → queries all registered services dynamically
 Discovery Service → returns complete tool list
-LLM → executes tools via service.call_tool(tool_name, **arguments)
+LLM → executes tools via MCP tool calls
 ```
 
 ## Quick Start
@@ -74,6 +108,8 @@ python -m mars.cli.main --remote 127.0.0.1:7432
 
 ## Available Services
 
+All services communicate via **MCP protocol** (Model Context Protocol).
+
 **LLM Services** (🤖)
 - `anthropic` — Anthropic Claude (alias: `claude`)
 - `copilot` — GitHub Copilot Chat
@@ -81,18 +117,44 @@ python -m mars.cli.main --remote 127.0.0.1:7432
 - `mock` / `mock-tool` — test-only providers, hidden from normal discovery
 
 **MCP Services** (⚙️)
+- `discovery` — **Primary bootstrap service** (starts automatically)
+- `status` — Core status service
+- `launcher` — Agent launcher service
 - `filesystem` — MCP filesystem server (stdio)
 - `mcp-generic` — Generic MCP server adapter
 
 **A2A Services** (🌐)
 - `remote-mars` — A2A peer connection to remote MARS instances
 
-**Builtin Services** (🔧)
-- `discovery` — **Primary bootstrap service** (starts automatically)
-- `status` — Core status service
-- `launcher` — Agent launcher service
-- `profiler` — Performance monitoring
-- `cli` — CLI connection handler
+**Federation Services** (🌍)
+- MARS-MARS federation for cross-node agent sharing
+
+## Protocol Features
+
+### AG-UI Protocol (Human-CLI)
+- Event-based human-agent interaction
+- Streaming responses
+- Artifact generation
+- State synchronization
+
+### A2A Protocol (Agent-Agent)
+- JSON-RPC 2.0 messaging
+- Task lifecycle management
+- Agent Card discovery
+- Cross-system federation
+
+### MCP Protocol (Services)
+- Tool discovery and invocation
+- Resource access
+- Prompt templates
+- Stdio server communication
+
+### MARS Federation Protocol
+- Node handshaking
+- Agent lifecycle synchronization
+- Federated messaging
+- Artifact transfer
+- Health monitoring
 
 ## Discovery Service Tools
 
