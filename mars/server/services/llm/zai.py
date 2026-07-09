@@ -1,27 +1,18 @@
-"""z.AI LLM provider for MARS.
+"""z.AI (ZhipuAI) LLM provider for MARS.
 
-z.AI (ZhipuAI) serves the GLM model family via an OpenAI-compatible REST API.
+z.AI serves the GLM model family via an OpenAI-compatible REST API.
 
 Docs:   https://docs.z.ai/api-reference/introduction
 Models: https://docs.z.ai/api-reference/chat-completions
+
+Uses the GLM Coding Plan endpoint: https://api.z.ai/api/coding/paas/v4
 
 Token resolution order:
   1. explicit ``api_key="..."`` argument,
   2. ``ZAI_API_KEY`` environment variable,
   3. ``ZHIPUAI_API_KEY`` environment variable (alternative name).
 
-Get an API key at https://platform.z.ai/ (register → API Keys).
-
-Base URL: https://api.z.ai/api/paas/v4/
-
-Recommended models
-------------------
-  glm-4-flash       – Fast, free tier (limited rate)
-  glm-4-air         – Balanced cost / quality
-  glm-4             – High quality, paid
-  glm-4-plus        – Highest quality
-  glm-z1-flash      – Reasoning model, fast
-  glm-z1-air        – Reasoning model, balanced
+Get an API key at https://z.ai/manage-apikey/apikey-list
 """
 
 from __future__ import annotations
@@ -35,16 +26,12 @@ from mars.server.services.llm.base import ModelInfo
 
 logger = logging.getLogger(__name__)
 
-_ZAI_API = "https://api.z.ai/api/paas/v4/"
+_ZAI_API = "https://api.z.ai/api/coding/paas/v4"
 
 _ZAI_TOKEN_ENV_VARS = ("ZAI_API_KEY", "ZHIPUAI_API_KEY")
 
 
 def _get_token(api_key: str | None = None) -> str | None:
-    """Return the z.AI API key.
-
-    Resolution: explicit ``api_key`` → ``ZAI_API_KEY`` → ``ZHIPUAI_API_KEY``.
-    """
     if api_key:
         return api_key
     for var in _ZAI_TOKEN_ENV_VARS:
@@ -52,6 +39,21 @@ def _get_token(api_key: str | None = None) -> str | None:
         if val and val.strip():
             return val.strip()
     return None
+
+
+def _get_base_url() -> str:
+    """Return the correct z.AI base URL based on ZAI_PLAN env var.
+
+    ZAI_PLAN=coding  →  GLM Coding Plan endpoint (subscription)
+    ZAI_PLAN unset   →  GLM Coding Plan endpoint (default — works with coding plan)
+    ZAI_PLAN=standard → Standard pay-per-token endpoint
+    """
+    plan = os.environ.get("ZAI_PLAN", "coding").strip().lower()
+    if plan == "standard":
+        logger.debug("ZAIService: using standard pay-per-token endpoint")
+        return _ZAI_STANDARD_API
+    logger.debug("ZAIService: using GLM Coding Plan endpoint")
+    return _ZAI_CODING_API
 
 
 class ZAIService(OpenAICompatibleProvider):
@@ -98,10 +100,17 @@ class ZAIService(OpenAICompatibleProvider):
             raise ValueError(
                 "z.AI: no API key found. Set ZAI_API_KEY or pass api_key=."
             )
+        base_url = _ZAI_API
+        logger.debug("ZAIService: base_url=%s model=%s", base_url, model)
+        # GLM reasoning models (glm-5.x, glm-z1-*) spend tokens on internal
+        # chain-of-thought before producing visible content.  A low max_tokens
+        # cap exhausts the budget on thinking and returns empty content.
+        # Default to 2048 so there is always room for a real reply.
+        kwargs.setdefault("default_params", {}).setdefault("max_tokens", 2048)
         super().__init__(
             model=model,
             api_key=token,
-            base_url=_ZAI_API,
+            base_url=base_url,
             **kwargs,
         )
 
