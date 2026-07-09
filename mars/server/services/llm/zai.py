@@ -70,6 +70,8 @@ class ZAIService(OpenAICompatibleProvider):
     provider_name = "zai"
 
     KNOWN_MODELS: dict[str, ModelInfo] = {m.id: m for m in [
+        # Current flagship
+        ModelInfo("glm-5.2",       "GLM-5.2",       "Current flagship model",        128_000, supports_tools=True,  is_free=False),
         # Free-tier / high-speed models
         ModelInfo("glm-4-flash",   "GLM-4 Flash",   "Fast, free tier",               128_000, supports_tools=True,  is_free=True),
         ModelInfo("glm-4-flash-250414", "GLM-4 Flash (Apr 2025)", "Latest flash",    128_000, supports_tools=True,  is_free=True),
@@ -87,7 +89,7 @@ class ZAIService(OpenAICompatibleProvider):
 
     def __init__(
         self,
-        model: str = "glm-4-flash",
+        model: str = "glm-5.2",
         api_key: str | None = None,
         **kwargs: Any,
     ) -> None:
