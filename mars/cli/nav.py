@@ -266,26 +266,43 @@ def _nav_mcp(state: MARSState, delta: int) -> None:
         state.mcp_scroll = cursor - win + 1
 
 
-def _nav_services(state: MARSState, delta: int) -> None:
-    """Move the Services cursor by *delta* rows and scroll-follow to keep it visible.
+def _build_services_rows(state: MARSState) -> list[tuple]:
+    """Build the flat navigable row list for the services panel.
 
-    Uses ``state.discovered_services`` (populated from the wire state frame) so
-    navigation works with the same data the panel renders — no server imports.
+    Returns a list of tuples:
+      ("section",      svc_type)                 — section header row
+      ("provider",     provider_name)             — LLM provider (expandable)
+      ("model",        provider_name, model_id)   — model sub-item (when expanded)
+      ("service_item", svc_name)                  — MCP service item
     """
     services = state.discovered_services
-    if not services:
-        return
-
-    # Build flat row list matching what render_services draws
-    by_type: dict[str, list[dict]] = {"llm": [], "mcp": [], "a2a": [], "builtin": []}
+    by_type: dict[str, list[dict]] = {"llm": [], "service": []}
     for svc in services:
-        by_type.setdefault(svc.get("type", "builtin"), []).append(svc)
+        raw = svc.get("type", "service")
+        bucket = raw if raw in by_type else "service"
+        by_type[bucket].append(svc)
 
-    total = sum(
-        1 + len(by_type[t])          # 1 header + N items
-        for t in ("llm", "mcp", "a2a", "builtin")
-        if by_type[t]
-    )
+    rows: list[tuple] = []
+    for svc_type in ("llm", "service"):
+        if not by_type[svc_type]:
+            continue
+        rows.append(("section", svc_type))
+        for svc in by_type[svc_type]:
+            name = svc["name"]
+            if svc_type == "llm":
+                rows.append(("provider", name))
+                if state.services_expanded.get(name):
+                    for mid in state.provider_models.get(name, []):
+                        rows.append(("model", name, mid))
+            else:
+                rows.append(("service_item", name))
+    return rows
+
+
+def _nav_services(state: MARSState, delta: int) -> None:
+    """Move the Services cursor by *delta* rows and scroll-follow to keep it visible."""
+    rows = _build_services_rows(state)
+    total = len(rows)
     if total == 0:
         return
 

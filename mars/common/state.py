@@ -58,6 +58,11 @@ class MARSState:
     # Format: [{"name": str, "type": str, "free": bool, "default": bool}, ...]
     # Populated by apply_event("state") — same frame any agent receives on connect.
     discovered_services: list = field(default_factory=list)
+    # Available models per LLM provider — populated by "models" event after connect.
+    # Format: {"ollama": ["qwen3:4b", "llama3.2", ...], "copilot": ["gpt-4o", ...]}
+    provider_models: dict = field(default_factory=dict)
+    # Expand/collapse state for LLM providers in the services panel.
+    services_expanded: dict = field(default_factory=dict)
     # which panel has keyboard focus: "sidebar" | "mcp" | "chat" | "connections" | "a2a"
     panel_focus: str = "chat"
     # this CLI's own agent ID — 🏠 in sidebar; set at startup

@@ -122,6 +122,9 @@ def apply_event(state: MARSState, ev: dict, *, tty: bool = True) -> None:
         # Store the service registry delivered alongside the state frame.
         state.discovered_services = ev.get("services", [])
 
+    elif t == "models":
+        state.provider_models = ev.get("models", {})
+
     elif t == "spawn":
         aid = ev.get("agent_id", "")
         if aid:

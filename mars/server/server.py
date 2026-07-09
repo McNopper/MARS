@@ -626,6 +626,24 @@ class MARSServer:
         entries.sort(key=lambda e: (e["skill"], e["agent_id"]))
         return entries
 
+    async def _fetch_and_send_models(self, session: ClientSession) -> None:
+        """Query list_models() for each available LLM provider, send back a 'models' frame."""
+        from mars.server.services.registry import REGISTRY, _is_available, get_service
+        models: dict[str, list[str]] = {}
+        for name, (_mod, _cls, stype, _default, test_only) in REGISTRY.items():
+            if stype != "llm" or test_only:
+                continue
+            if not _is_available(name):
+                models[name] = []
+                continue
+            try:
+                svc = get_service(name)
+                result = await asyncio.wait_for(svc.list_models(), timeout=5.0)
+                models[name] = [m.id for m in result]
+            except Exception:
+                models[name] = []
+        self._send_to(session, {"t": "models", "models": models})
+
     async def _handle_structured_command(
         self, session: ClientSession, cmd: str, msg: dict[str, Any]
     ) -> None:
@@ -638,6 +656,9 @@ class MARSServer:
         """
         if cmd == "list_skills":
             self._send_to(session, {"t": "skills", "skills": self._skill_index()})
+            return
+        if cmd == "get_models":
+            asyncio.create_task(self._fetch_and_send_models(session))
             return
         text = str(msg.get("text") or "").strip()
         if text:

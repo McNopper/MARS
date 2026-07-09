@@ -82,6 +82,11 @@ def _available_copilot() -> bool:
 
 
 
+def _available_zai() -> bool:
+    """True if a z.AI API key is set (ZAI_API_KEY or ZHIPUAI_API_KEY)."""
+    return any(os.environ.get(v) for v in ("ZAI_API_KEY", "ZHIPUAI_API_KEY"))
+
+
 def _not_available() -> bool:
     """Services that require explicit user configuration before they can be used."""
     return False
@@ -91,6 +96,7 @@ def _not_available() -> bool:
 _AVAILABILITY: dict[str, Any] = {
     "copilot":    _available_copilot,
     "ollama":     _available_ollama,
+    "zai":        _available_zai,
     # MCP services need a user-supplied command — not usable out of the box
     "filesystem":  _not_available,
     # A2A needs a peer address to connect to
@@ -179,6 +185,8 @@ REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
     "copilot":   ("mars.server.services.llm.copilot",   "CopilotService",      "llm", False, False),
     # Local Ollama server (https://ollama.com – no API key required)
     "ollama":    ("mars.server.services.llm.ollama",    "OllamaService",       "llm", False, False),
+    # z.AI (ZhipuAI) GLM model family (https://platform.z.ai – requires ZAI_API_KEY)
+    "zai":       ("mars.server.services.llm.zai",       "ZAIService",          "llm", False, False),
     # Mock provider – offline testing only, not shown in the services panel
     "mock":      ("mars.server.services.llm.mock",      "MockService",         "llm", False, True),
     # Mock provider that emits tool calls – for tool round-trip tests only

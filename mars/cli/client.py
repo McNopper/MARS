@@ -33,6 +33,7 @@ from mars.common.models import (
 )
 from mars.cli.events import apply_event
 from mars.cli.nav import (
+    _build_services_rows,
     _is_conversational,
     _nav_connections,
     _nav_services,
@@ -87,6 +88,9 @@ class MARSClientTerminal:
 
     def _apply_event(self, ev: dict) -> None:
         apply_event(self._state, ev)
+        # After receiving the initial state frame, request model lists
+        if ev.get("t") == "state":
+            self._send({"t": "cmd", "cmd": "get_models"})
 
     # ------------------------------------------------------------------
     # Send helpers
@@ -95,6 +99,27 @@ class MARSClientTerminal:
     def _send(self, msg: dict) -> None:
         line = encode_frame(msg)
         self._writer.write(line)
+
+    def _activate_services_selection(self) -> str | None:
+        """Activate the currently selected row in the services panel.
+
+        Returns a command string to submit (e.g. '/spawn ollama qwen3:4b'),
+        or None if the selection was handled internally (expand/collapse).
+        """
+        s = self._state
+        rows = _build_services_rows(s)
+        if not rows or s.services_cursor >= len(rows):
+            return None
+        row = rows[s.services_cursor]
+        if row[0] == "provider":
+            # Toggle expand/collapse
+            provider = row[1]
+            s.services_expanded[provider] = not s.services_expanded.get(provider, False)
+            return None
+        if row[0] == "model":
+            provider, model_id = row[1], row[2]
+            return f"/spawn {provider} {model_id}"
+        return None
 
     def _prompt_str(self) -> str:
         target = self._state.current_agent
@@ -285,6 +310,12 @@ class MARSClientTerminal:
                     try:
                         ch = msvcrt.getwch()
                         if ch in ('\r', '\n'):
+                            # If services panel is focused and buffer is empty, activate selection
+                            if self._state.panel_focus == "services" and not buf:
+                                cmd = self._activate_services_selection()
+                                if cmd is not None:
+                                    loop.call_soon_threadsafe(input_queue.put_nowait, cmd)
+                                continue
                             line, buf = buf, ""
                             with self._input_lock:
                                 self._input_buffer = ""
@@ -324,6 +355,12 @@ class MARSClientTerminal:
                     while True:
                         ch = sys.stdin.read(1)
                         if ch in ('\r', '\n'):
+                            # If services panel is focused and buffer is empty, activate selection
+                            if self._state.panel_focus == "services" and not buf:
+                                cmd = self._activate_services_selection()
+                                if cmd is not None:
+                                    loop.call_soon_threadsafe(input_queue.put_nowait, cmd)
+                                continue
                             line, buf = buf, ""
                             with self._input_lock:
                                 self._input_buffer = ""

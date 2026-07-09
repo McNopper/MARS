@@ -10,7 +10,7 @@ from mars.common.models import (
     ChatMessage,
     MARSState,
 )
-from mars.cli.nav import _is_conversational, _mcp_agent_ids
+from mars.cli.nav import _build_services_rows, _is_conversational, _mcp_agent_ids
 
 try:
     from rich.console import Console, Group
@@ -66,12 +66,7 @@ class MARSRenderer:
     _PINNED_AGENTS: tuple = ()  # echo bots no longer shown in sidebar
 
     def render_services(self, height: int | None = None) -> Panel:
-        """Left panel: Unified Services panel.
-
-        Reads from ``state.discovered_services`` which is populated from the
-        standard ``state`` wire frame the server sends on connect — the same
-        data any agent receives via DiscoveryService.  No direct registry import.
-        """
+        """Left panel: Unified Services panel with expandable LLM providers."""
         s = self._s
         text = Text()
         is_focused = s.panel_focus == "services"
@@ -80,8 +75,7 @@ class MARSRenderer:
         if height is not None:
             s.services_visible_height = max(1, height - 2)
 
-        services = s.discovered_services
-        if not services:
+        if not s.discovered_services:
             text.append("  [dim]No services available[/dim]\n")
             return Panel(
                 text,
@@ -91,59 +85,86 @@ class MARSRenderer:
                 height=height,
             )
 
-        type_emojis = {"llm": "🤖", "service": "⚙️"}
-        by_type: dict[str, list[dict]] = {"llm": [], "service": []}
-        for svc in services:
-            raw = svc.get("type", "service")
-            # Normalise legacy type names from older server versions
-            bucket = raw if raw in by_type else "service"
-            by_type[bucket].append(svc)
+        # Build service lookup for dot colours
+        svc_lookup: dict[str, dict] = {svc["name"]: svc for svc in s.discovered_services}
 
-        # Build flat row list for cursor/scroll
-        rows: list[tuple[str, str | None]] = []  # (type_key, svc_name_or_None)
-        for svc_type in ("llm", "service"):
-            if not by_type.get(svc_type):
-                continue
-            rows.append((svc_type, None))
-            for svc in by_type[svc_type]:
-                rows.append((svc_type, svc["name"]))
-
+        rows = _build_services_rows(s)
         total_rows = len(rows)
         s.services_cursor = max(0, min(s.services_cursor, total_rows - 1))
         s.services_scroll = max(0, min(s.services_scroll, total_rows - 1))
 
+        # Count LLM providers and MCP services for section headers
+        llm_svcs  = [sv for sv in s.discovered_services if sv.get("type") == "llm"]
+        mcp_svcs  = [sv for sv in s.discovered_services if sv.get("type") != "llm"]
+
         rows_used = 0
-        for i, (svc_type, svc_name) in enumerate(rows):
+        for i, row in enumerate(rows):
             if i < s.services_scroll:
                 continue
             if rows_used >= max_rows:
                 break
             is_selected = is_focused and (i == s.services_cursor)
             cursor_ch = "►" if is_selected else " "
-            style = "bold cyan" if is_selected else ""
-            if svc_name is None:
-                emoji = type_emojis.get(svc_type, "📦")
-                count = len(by_type[svc_type])
-                label = "LLM Agents" if svc_type == "llm" else "MCP Services"
-                text.append(f"{cursor_ch} {emoji} ", style=style)
-                text.append(label, style="bold white" if is_selected else "white")
+            sel_style = "bold cyan" if is_selected else ""
+
+            if row[0] == "section":
+                svc_type = row[1]
+                if svc_type == "llm":
+                    count = len(llm_svcs)
+                    text.append(f"{cursor_ch} 🤖 ", style=sel_style)
+                    text.append("LLM Agents", style="bold white" if is_selected else "white")
+                else:
+                    count = len(mcp_svcs)
+                    text.append(f"{cursor_ch} ⚙️  ", style=sel_style)
+                    text.append("MCP Services", style="bold white" if is_selected else "white")
                 text.append(f" ({count})\n", style="dim")
-            else:
-                svc_data = next(
-                    (s2 for s2 in by_type[svc_type] if s2["name"] == svc_name), {}
-                )
+
+            elif row[0] == "provider":
+                provider = row[1]
+                svc_data = svc_lookup.get(provider, {})
+                expand_ch = "▼" if s.services_expanded.get(provider) else "▶"
+                models_loaded = provider in s.provider_models
+                expand_style = "white" if models_loaded else "dim"
                 if svc_data.get("running"):
                     dot_style = "green"
                 elif svc_data.get("available"):
                     dot_style = "white"
                 else:
                     dot_style = "red"
-                text.append(f"{cursor_ch} ", style=style)
+                text.append(f"{cursor_ch} ", style=sel_style)
+                text.append(f"{expand_ch} ", style=expand_style if not is_selected else sel_style)
+                text.append("● ", style=dot_style)
+                text.append(f"{provider}\n", style="white" if is_selected else "dim")
+
+            elif row[0] == "model":
+                provider, model_id = row[1], row[2]
+                # Check if this model is currently running as an agent
+                running = any(
+                    rec.vendor == provider and getattr(rec, "model", "") == model_id
+                    for rec in s.agents.values()
+                    if rec.agent_type == "LLMAgent"
+                )
+                dot_style = "green" if running else "dim"
+                text.append(f"{cursor_ch}   ", style=sel_style)
+                text.append("● ", style=dot_style)
+                text.append(f"{model_id}\n", style="white" if is_selected else "dim")
+
+            elif row[0] == "service_item":
+                svc_name = row[1]
+                svc_data = svc_lookup.get(svc_name, {})
+                if svc_data.get("running"):
+                    dot_style = "green"
+                elif svc_data.get("available"):
+                    dot_style = "white"
+                else:
+                    dot_style = "red"
+                text.append(f"{cursor_ch} ", style=sel_style)
                 text.append("● ", style=dot_style)
                 text.append(f"{svc_name}\n", style="white" if is_selected else "dim")
+
             rows_used += 1
 
-        total_svcs = len(services)
+        total_svcs = len(s.discovered_services)
         subtitle = f"[dim]{total_svcs} service{'s' if total_svcs != 1 else ''}"
         if s.services_scroll > 0:
             subtitle += f" ↑{s.services_scroll}"
