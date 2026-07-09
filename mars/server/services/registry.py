@@ -61,10 +61,22 @@ def _available_ollama() -> bool:
 
 
 def _available_copilot() -> bool:
-    """Copilot requires a paid subscription and explicit API credentials."""
+    """True if a Copilot OAuth token is resolvable — mirrors CopilotService._get_token()."""
+    import contextlib
+    import shutil
+    import subprocess
     for var in ("COPILOT_API_KEY", "GH_COPILOT_TOKEN", "GITHUB_COPILOT_TOKEN"):
         if os.environ.get(var):
             return True
+    if not shutil.which("gh"):
+        return False
+    with contextlib.suppress(Exception):
+        env = {k: v for k, v in os.environ.items() if k != "GITHUB_TOKEN"}
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True, text=True, timeout=2, env=env,
+        )
+        return bool(result.stdout.strip())
     return False
 
 
