@@ -9,7 +9,6 @@ Tests cover:
 - ``_cmd_share``               — export to markdown file
 - ``_cmd_search``              — search conversation history
 - ``_cmd_version``             — show installed version
-- ``_cmd_theme``               — switch color theme
 - ``_cmd_copy``                — copy last reply
 - ``MARSClientTerminal._handle_command``   — local command dispatch
 - ``MARSClientTerminal._apply_event``      — server-event application
@@ -31,7 +30,6 @@ from mars.cli.main import (
     _cmd_rewind,
     _cmd_search,
     _cmd_share,
-    _cmd_theme,
     _cmd_version,
     _expand_file_mentions,
     _handle_bang_cmd,
@@ -302,36 +300,6 @@ class TestCmdVersion:
         state = MARSState()
         _cmd_version(state)
         assert "mars" in state.status_line.lower() or "v" in state.status_line.lower()
-
-
-# ---------------------------------------------------------------------------
-# _cmd_theme
-# ---------------------------------------------------------------------------
-
-
-class TestCmdTheme:
-    def test_valid_theme_sets_state(self):
-        state = MARSState()
-        _cmd_theme(state, "dracula")
-        assert state.theme == "dracula"
-
-    def test_valid_theme_confirms_in_status(self):
-        state = MARSState()
-        _cmd_theme(state, "dark")
-        assert "dark" in state.status_line
-
-    def test_unknown_theme_shows_error(self):
-        state = MARSState()
-        _cmd_theme(state, "neon-unicorn")
-        assert "unknown" in state.status_line.lower() or "neon-unicorn" in state.status_line
-
-    def test_empty_theme_shows_available(self):
-        state = MARSState()
-        state.theme = "dark"
-        _cmd_theme(state, "")
-        assert "dark" in state.status_line
-        assert "available" in state.status_line.lower() or "light" in state.status_line
-
 
 # ---------------------------------------------------------------------------
 # MARSClientTerminal._apply_event

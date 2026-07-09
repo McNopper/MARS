@@ -109,7 +109,6 @@ from typing import Any
 from mars.cli.client import MARSClientTerminal
 from mars.common.wire import decode_frame, encode_frame
 from mars.cli.commands import (  # noqa: F401 — re-exported for backward compatibility
-    _THEMES,
     _cmd_ask,
     _cmd_compact,
     _cmd_context,
@@ -120,7 +119,6 @@ from mars.cli.commands import (  # noqa: F401 — re-exported for backward compa
     _cmd_rewind,
     _cmd_search,
     _cmd_share,
-    _cmd_theme,
     _cmd_version,
     _expand_file_mentions,
     _handle_bang_cmd,

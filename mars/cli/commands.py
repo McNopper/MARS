@@ -160,7 +160,6 @@ _HELP_TEXT = """\
 | Command | Description |
 | --- | --- |
 | `/echo text\\|md\\|void` | Switch output rendering mode |
-| `/theme [name]` | Switch color theme |
 
 ## Other
 | Command | Description |
@@ -237,7 +236,7 @@ def _cmd_read(state: Any, path: str) -> None:
 
 # ---------------------------------------------------------------------------
 # /copy  /new  /context  /instructions  /compact  /share  /rewind
-# /search  /ask  /plan  /version  /theme
+# /search  /ask  /plan  /version
 # ---------------------------------------------------------------------------
 
 
@@ -486,33 +485,3 @@ def _cmd_version(state: Any) -> None:
     state.status_line = f"MARS v{v}"
 
 
-_THEMES: dict[str, dict[str, str]] = {
-    "dark":      {"primary": "cyan",   "secondary": "blue",  "accent": "green"},
-    "light":     {"primary": "blue",   "secondary": "green", "accent": "cyan"},
-    "dracula":   {"primary": "purple", "secondary": "pink",  "accent": "yellow"},
-    "solarized": {"primary": "yellow", "secondary": "green", "accent": "cyan"},
-}
-
-
-def _cmd_theme(state: Any, theme: str) -> None:
-    """Switch color theme (``/theme [name]``).
-
-    .. note::
-        TODO: ``state.theme`` is stored but the renderer does not yet read it.
-        To fully implement theming, ``renderer.py`` needs to replace its
-        hard-coded ``"cyan"`` / ``"blue"`` panel border colours with lookups
-        from ``_THEMES[state.theme]``.
-    """
-    if not theme:
-        current = getattr(state, "theme", "dark")
-        available = ", ".join(_THEMES.keys())
-        state.status_line = f"Current theme: {current}. Available: {available}"
-        return
-    if theme in _THEMES:
-        state.theme = theme
-        state.status_line = f"🎨 Theme set to '{theme}'"
-    else:
-        state.status_line = (
-            f"Unknown theme '{theme}'. "
-            f"Available: {', '.join(_THEMES.keys())}"
-        )

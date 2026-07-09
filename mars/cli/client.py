@@ -21,7 +21,6 @@ from mars.cli.commands import (
     _cmd_rewind,
     _cmd_search,
     _cmd_share,
-    _cmd_theme,
     _cmd_version,
     _expand_file_mentions,
     _handle_bang_cmd,
@@ -62,7 +61,7 @@ class MARSClientTerminal:
     _LOCAL = frozenset({
         "switch", "avatar", "verbose", "read", "agents", "status", "echo",
         "help", "quit",
-        "new", "rewind", "context", "share", "search", "version", "theme",
+        "new", "rewind", "context", "share", "search", "version",
         "copy", "compact", "instructions", "ask", "plan",
     })
 
@@ -223,8 +222,6 @@ class MARSClientTerminal:
             _cmd_context(self._state)
         elif cmd == "version":
             _cmd_version(self._state)
-        elif cmd == "theme":
-            state.status_line = "Theme switching not yet implemented."
         elif cmd == "share":
             _cmd_share(self._state, " ".join(args))
         elif cmd == "search":
