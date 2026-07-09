@@ -46,8 +46,19 @@ from mars.server.services.base import Service
 # ---------------------------------------------------------------------------
 
 def _available_ollama() -> bool:
-    """Ollama is local; treat as available if the host env is set or default assumed."""
-    return True  # No key needed; reachability is checked at spawn time
+    """True if the Ollama HTTP server is reachable (TCP connect, no network I/O beyond LAN)."""
+    import socket
+    import urllib.parse
+    host_env = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    parsed = urllib.parse.urlparse(host_env if "://" in host_env else f"http://{host_env}")
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 11434
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
 
 
 def _available_copilot() -> bool:
