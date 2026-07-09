@@ -328,7 +328,7 @@ class MARSFederationProtocol:
         if hasattr(connection, 'send'):
             await connection.send(serialized)
         else:
-            raise ValueError(f"Node connection does not support sending")
+            raise ValueError("Node connection does not support sending")
 
         # For request/response patterns, would wait for response here
         return None

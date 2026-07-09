@@ -7,7 +7,6 @@ This protocol enables MARS nodes to federate and share agents across network bou
 
 import json
 from typing import Any, Dict, Optional, List
-from uuid import uuid4
 
 from .base import (
     ProtocolAdapter,

@@ -5,10 +5,15 @@ All protocol adapters must implement this interface to ensure consistent
 message handling across different protocols (AG-UI, A2A, MCP, MARS).
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence
 from enum import Enum
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence
+
+if TYPE_CHECKING:
+    from mars.common.wire import WireProtocol
 
 
 class ProtocolType(Enum):

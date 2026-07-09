@@ -237,19 +237,17 @@ class ServiceToolBuilder:
         Returns:
             JSON Schema for the type
         """
-        import typing
-
-        if type_hint == str:
+        if type_hint is str:
             return {"type": "string"}
-        elif type_hint == int:
+        elif type_hint is int:
             return {"type": "integer"}
-        elif type_hint == float:
+        elif type_hint is float:
             return {"type": "number"}
-        elif type_hint == bool:
+        elif type_hint is bool:
             return {"type": "boolean"}
-        elif type_hint == list or type_hint == List:
+        elif type_hint is list or type_hint is List:
             return {"type": "array", "items": {}}
-        elif type_hint == dict or type_hint == Dict:
+        elif type_hint is dict or type_hint is Dict:
             return {"type": "object", "properties": {}}
         else:
             # Default to string for unknown types

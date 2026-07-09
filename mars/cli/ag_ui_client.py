@@ -7,9 +7,8 @@ replacing the legacy JSON-line protocol with standardized AG-UI events.
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from mars.common.wire import WireProtocol, encode_frame_with_protocol
 
