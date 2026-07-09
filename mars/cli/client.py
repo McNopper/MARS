@@ -321,9 +321,10 @@ class MARSClientTerminal:
                             loop.call_soon_threadsafe(input_queue.put_nowait, None)
                             return
                         elif ch in ('\x08', '\x7f'):
-                            buf = buf[:-1]
-                            with self._input_lock:
-                                self._input_buffer = buf
+                            if self._state.panel_focus == "chat":
+                                buf = buf[:-1]
+                                with self._input_lock:
+                                    self._input_buffer = buf
                         elif ch in ('\x00', '\xe0'):
                             sc = msvcrt.getwch()
                             _scroll_key(sc)
@@ -332,10 +333,16 @@ class MARSClientTerminal:
                             cur = self._state.panel_focus
                             idx = order.index(cur) if cur in order else 0
                             self._state.panel_focus = order[(idx + 1) % len(order)]
+                            # Clear any partial input when leaving the chat panel
+                            if cur == "chat" and buf:
+                                buf = ""
+                                with self._input_lock:
+                                    self._input_buffer = ""
                         else:
-                            buf += ch
-                            with self._input_lock:
-                                self._input_buffer = buf
+                            if self._state.panel_focus == "chat":
+                                buf += ch
+                                with self._input_lock:
+                                    self._input_buffer = buf
                     except Exception:
                         loop.call_soon_threadsafe(input_queue.put_nowait, None)
                         return
@@ -366,14 +373,20 @@ class MARSClientTerminal:
                             loop.call_soon_threadsafe(input_queue.put_nowait, None)
                             return
                         elif ch in ('\x7f', '\x08'):
-                            buf = buf[:-1]
-                            with self._input_lock:
-                                self._input_buffer = buf
+                            if self._state.panel_focus == "chat":
+                                buf = buf[:-1]
+                                with self._input_lock:
+                                    self._input_buffer = buf
                         elif ch == '\t':  # Tab — cycle panel focus
                             order = self._renderer._PANEL_FOCUS_ORDER
                             cur = self._state.panel_focus
                             idx = order.index(cur) if cur in order else 0
                             self._state.panel_focus = order[(idx + 1) % len(order)]
+                            # Clear any partial input when leaving the chat panel
+                            if cur == "chat" and buf:
+                                buf = ""
+                                with self._input_lock:
+                                    self._input_buffer = ""
                         elif ch == '\x1b':
                             ch2 = sys.stdin.read(1)
                             if ch2 == '[':
@@ -415,9 +428,10 @@ class MARSClientTerminal:
                                     except Exception:
                                         pass
                         else:
-                            buf += ch
-                            with self._input_lock:
-                                self._input_buffer = buf
+                            if self._state.panel_focus == "chat":
+                                buf += ch
+                                with self._input_lock:
+                                    self._input_buffer = buf
                 finally:
                     # Disable X10 mouse tracking before restoring terminal
                     sys.stdout.write("\x1b[?1000l")

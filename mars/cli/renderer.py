@@ -578,7 +578,7 @@ class MARSRenderer:
         prompt_panel = Panel(
             prompt_text,
             title=Text(status, style=status_style) if status else None,
-            border_style="green",
+            border_style="green" if self._s.panel_focus == "chat" else "blue",
             padding=(0, 1),
         )
 
