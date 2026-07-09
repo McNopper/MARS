@@ -121,10 +121,8 @@ Everything else — builtin utilities, external MCP servers, A2A peers. All disc
 | `discovery` | ✅ | **Bootstrap** — LLMs receive this on spawn; returns all services and tools |
 | `status` | ✅ | Runtime introspection — agents, problems, activity |
 | `launcher` | ✅ | Spawn new LLM agents at runtime |
-| `agent-comm` | ✅ | Agent-to-agent messaging utilities |
 | `cli` | ✅ | CLI connection management |
 | `filesystem` | — | MCP filesystem server (stdio, requires config) |
-| `mcp-generic` | — | Generic MCP server adapter (requires config) |
 | `remote-mars` | — | A2A peer connection to remote MARS nodes (requires config) |
 
 ## Architecture

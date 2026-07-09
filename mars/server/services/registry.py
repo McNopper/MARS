@@ -87,7 +87,6 @@ _AVAILABILITY: dict[str, Any] = {
     "ollama":      _available_ollama,
     # MCP services need a user-supplied command — not usable out of the box
     "filesystem":  _not_available,
-    "mcp-generic": _not_available,
     # A2A needs a peer address to connect to
     "remote-mars": _not_available,
 }
@@ -189,8 +188,6 @@ REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
     "status":       ("mars.server.services.builtin.status_service",   "StatusService",                "service", True,  False),
     # Launcher service (spawn new LLM agents at runtime)
     "launcher":     ("mars.server.services.builtin.launcher_service", "LauncherService",              "service", True,  False),
-    # Agent-to-agent messaging utilities
-    "agent-comm":   ("mars.server.services.builtin.agent_service",    "AgentCommunicationService",    "service", True,  False),
     # Profiler (performance monitoring, off by default)
     "profiler":     ("mars.server.services.builtin.profiler",         "ProfilerService",              "service", False, False),
     # CLI connection management
@@ -198,8 +195,6 @@ REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
     # -- External MCP servers (require user-supplied command) --
     # MCP filesystem server (stdio)
     "filesystem":   ("mars.server.services.mcp.service",              "MCPService",                   "service", False, False),
-    # Generic MCP server adapter (wraps any stdio MCP server)
-    "mcp-generic":  ("mars.server.services.mcp.service",              "MCPService",                   "service", False, False),
     # -- A2A peers (require peer address) --
     # A2A peer connection to a remote MARS instance
     "remote-mars":  ("mars.server.services.a2a.service",              "A2AService",                   "service", False, False),
@@ -215,7 +210,6 @@ DEFAULT_SERVICES: list[str] = [
     "discovery",   # Dynamic service discovery for LLMs (primary bootstrap service)
     "status",      # Core status service
     "launcher",    # Agent launcher
-    "agent-comm",  # Agent communication service
     "cli",         # CLI connection handler
 ]
 
