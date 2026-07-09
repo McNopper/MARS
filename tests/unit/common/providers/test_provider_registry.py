@@ -15,7 +15,6 @@ from mars.server.services.registry import (
 def test_list_services_returns_all_registered_names() -> None:
     providers = list_services(include_test=True)
     assert isinstance(providers, list)
-    assert "anthropic" in providers
     assert "ollama" in providers
     assert "mock" in providers
     assert "copilot" in providers
@@ -37,16 +36,14 @@ def test_unknown_provider_raises_value_error() -> None:
         get_service("totally-unknown-provider-xyz")
 
 
-def test_alias_claude_resolves_to_anthropic() -> None:
-    """'claude' alias must resolve to the Anthropic provider (import may fail without key)."""
+def test_no_aliases_defined() -> None:
     from mars.server.services.registry import _ALIASES
-    assert _ALIASES.get("claude") == "anthropic"
+    assert _ALIASES == {}
 
 
 def test_free_providers_set_is_correct() -> None:
     assert "ollama" in FREE_SERVICES
     assert "copilot" in FREE_SERVICES
-    assert "anthropic" not in FREE_SERVICES
     assert "mock" not in FREE_SERVICES  # test-only, removed from FREE_SERVICES
 
 

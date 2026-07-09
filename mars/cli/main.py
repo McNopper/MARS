@@ -49,7 +49,7 @@ Tile border colours (full TUI mode)
 Commands
 --------
 Agents
-  /spawn <provider> [model]   Spawn a new LLM agent (ollama, copilot, anthropic, mock, …)
+  /spawn <provider> [model]   Spawn a new LLM agent (ollama, copilot, mock, …)
                               Options: --name NAME --role ROLE --goal GOAL
                                        --behaviour reactive|proactive
                                        --key KEY --host HOST

@@ -22,23 +22,23 @@ def test_plain_provider() -> None:
 
 
 def test_provider_slash_model_split() -> None:
-    cmd = MARSServer._build_wire_agent_cmd("h:1", provider="anthropic/claude-opus-4-8")
-    assert _opt(cmd, "--provider") == "anthropic"
-    assert _opt(cmd, "--model") == "claude-opus-4-8"
+    cmd = MARSServer._build_wire_agent_cmd("h:1", provider="ollama/qwen3:4b")
+    assert _opt(cmd, "--provider") == "ollama"
+    assert _opt(cmd, "--model") == "qwen3:4b"
 
 
 def test_explicit_model_overrides_provider_suffix() -> None:
     cmd = MARSServer._build_wire_agent_cmd(
-        "h:1", provider="anthropic/sonnet", model="claude-opus-4-8"
+        "h:1", provider="ollama/qwen3:4b", model="llama3.2"
     )
-    assert _opt(cmd, "--model") == "claude-opus-4-8"
+    assert _opt(cmd, "--model") == "llama3.2"
 
 
 def test_knobs_appended() -> None:
     cmd = MARSServer._build_wire_agent_cmd(
         "h:1",
-        provider="anthropic",
-        model="claude-opus-4-8",
+        provider="ollama",
+        model="qwen3:4b",
         thinking=True,
         cache_prompts=True,
         max_tokens=16000,
@@ -51,11 +51,11 @@ def test_knobs_appended() -> None:
 
 
 def test_cache_prompts_false_emits_negation() -> None:
-    cmd = MARSServer._build_wire_agent_cmd("h:1", provider="anthropic", cache_prompts=False)
+    cmd = MARSServer._build_wire_agent_cmd("h:1", provider="ollama", cache_prompts=False)
     assert "--no-cache-prompts" in cmd
     assert "--cache-prompts" not in cmd
 
 
 def test_skills_string_passthrough() -> None:
-    cmd = MARSServer._build_wire_agent_cmd("h:1", provider="anthropic", skills="a,b,c")
+    cmd = MARSServer._build_wire_agent_cmd("h:1", provider="ollama", skills="a,b,c")
     assert _opt(cmd, "--skills") == "a,b,c"

@@ -16,9 +16,8 @@ def _parse_spawn_request(text: str) -> dict[str, Any]:
     """Parse a spawn request (JSON object or positional) into spawn-envelope args.
 
     JSON keys: ``provider``, ``model``, ``name``, ``system_prompt``, ``kickoff``,
-    ``max_tokens`` (all providers), the Anthropic-only ``thinking`` /
-    ``cache_prompts``, plus ``allowed_skills`` (or ``skills``) for role isolation.
-    Positional: ``"anthropic"`` or ``"anthropic claude-opus-4-8"``.
+    ``max_tokens``, plus ``allowed_skills`` (or ``skills``) for role isolation.
+    Positional: ``"ollama"`` or ``"ollama qwen3:4b"``.
     """
     text = text.strip()
     try:
@@ -84,7 +83,7 @@ class LauncherService(BuiltinService):
                     "properties": {
                         "service_name": {
                             "type": "string",
-                            "description": "Name of the service to use (e.g., 'anthropic', 'ollama')"
+                            "description": "Name of the service to use (e.g., 'ollama', 'copilot')"
                         },
                         "model": {
                             "type": "string",

@@ -108,7 +108,6 @@ Two categories exist. LLM Agents are conversational inference backends. Everythi
 | Agent | Notes |
 |-------|-------|
 | `ollama` | Local Ollama server |
-| `anthropic` / `claude` | Anthropic Claude API |
 | `copilot` | GitHub Copilot Chat |
 | `mock` / `mock-tool` | Test-only — hidden from discovery |
 

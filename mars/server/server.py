@@ -187,10 +187,10 @@ class MARSServer:
         Single source of truth for spawning LLM wire agents — used by
         ``/spawn``, the ``_mars_cmd`` envelope (launcher / coordinator), and
         the server's startup auto-spawn.  ``provider`` may be a bare name
-        (``anthropic``) or ``provider/model`` (``anthropic/claude-opus-4-8``);
+        (``ollama``) or ``provider/model`` (``ollama/qwen3:4b``);
         the model part is used only when ``model`` is not given explicitly.
-        ``max_tokens`` and ``skills`` apply to every provider; ``thinking`` and
-        ``cache_prompts`` are Anthropic-only and no-ops elsewhere.
+        ``max_tokens``, ``skills``, ``thinking``, and ``cache_prompts`` apply
+        to all providers.
         """
         provider_name, _, model_from_provider = provider.partition("/")
         model_final = str(model) if model else (model_from_provider or "")

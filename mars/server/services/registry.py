@@ -6,13 +6,12 @@ Usage
 
     # LLM agents
     ollama = get_service("ollama", model="llama3.2")
-    anthropic = get_service("anthropic")
 
     # Services (all accessed via MCP)
     federation = get_service("federation", url="http://localhost:8000")
 
     print(list_services())
-    # ['anthropic', 'ollama', 'copilot', 'filesystem', 'status', ...]
+    # ['ollama', 'copilot', 'filesystem', 'status', ...]
 
 Adding a new service
 --------------------
@@ -80,8 +79,7 @@ def _available_copilot() -> bool:
     return False
 
 
-def _available_anthropic() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_KEY"))
+
 
 
 def _not_available() -> bool:
@@ -91,9 +89,8 @@ def _not_available() -> bool:
 
 # Map service name → availability probe (None = always available)
 _AVAILABILITY: dict[str, Any] = {
-    "copilot":     _available_copilot,
-    "anthropic":   _available_anthropic,
-    "ollama":      _available_ollama,
+    "copilot":    _available_copilot,
+    "ollama":     _available_ollama,
     # MCP services need a user-supplied command — not usable out of the box
     "filesystem":  _not_available,
     # A2A needs a peer address to connect to
@@ -180,8 +177,6 @@ REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
     # === LLM Agents ===
     # GitHub Copilot Chat (uses GITHUB_TOKEN / gh auth login – no extra SDK)
     "copilot":   ("mars.server.services.llm.copilot",   "CopilotService",      "llm", False, False),
-    # Anthropic Claude (pip install anthropic + ANTHROPIC_API_KEY)
-    "anthropic": ("mars.server.services.llm.anthropic", "AnthropicService",    "llm", False, False),
     # Local Ollama server (https://ollama.com – no API key required)
     "ollama":    ("mars.server.services.llm.ollama",    "OllamaService",       "llm", False, False),
     # Mock provider – offline testing only, not shown in the services panel
@@ -210,9 +205,7 @@ REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
 }
 
 # Aliases
-_ALIASES: dict[str, str] = {
-    "claude": "anthropic",
-}
+_ALIASES: dict[str, str] = {}
 
 # Services that start automatically with MARS
 DEFAULT_SERVICES: list[str] = [

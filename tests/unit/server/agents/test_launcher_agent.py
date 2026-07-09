@@ -9,8 +9,8 @@ from mars.server.services.builtin.launcher_service import _parse_spawn_request
 
 class TestParseSpawnRequest:
     def test_provider_only(self) -> None:
-        args = _parse_spawn_request("anthropic")
-        assert args == {"provider": "anthropic"}
+        args = _parse_spawn_request("ollama")
+        assert args == {"provider": "ollama"}
 
     def test_provider_and_model_positional(self) -> None:
         args = _parse_spawn_request("ollama llama3.2")
@@ -19,10 +19,10 @@ class TestParseSpawnRequest:
 
     def test_json_object(self) -> None:
         args = _parse_spawn_request(
-            json.dumps({"provider": "anthropic", "model": "claude-opus-4-8"})
+            json.dumps({"provider": "copilot", "model": "gpt-4o"})
         )
-        assert args["provider"] == "anthropic"
-        assert args["model"] == "claude-opus-4-8"
+        assert args["provider"] == "copilot"
+        assert args["model"] == "gpt-4o"
 
     def test_json_provider_only(self) -> None:
         args = _parse_spawn_request(json.dumps({"provider": "copilot"}))
@@ -35,7 +35,7 @@ class TestParseSpawnRequest:
         assert _parse_spawn_request("OLLAMA")["provider"] == "ollama"
 
     def test_json_provider_lowercased(self) -> None:
-        assert _parse_spawn_request(json.dumps({"provider": "Anthropic"}))["provider"] == "anthropic"
+        assert _parse_spawn_request(json.dumps({"provider": "Ollama"}))["provider"] == "ollama"
 
     def test_model_with_tag(self) -> None:
         args = _parse_spawn_request("ollama qwen2.5:7b")
@@ -62,10 +62,10 @@ class TestParseSpawnRequest:
         assert args["system_prompt"] == "You are a phase coordinator."
         assert args["kickoff"] == "Start now."
 
-    def test_json_claude_knobs(self) -> None:
+    def test_json_spawn_knobs(self) -> None:
         data = {
-            "provider": "anthropic",
-            "model": "claude-opus-4-8",
+            "provider": "ollama",
+            "model": "qwen3:4b",
             "thinking": True,
             "cache_prompts": False,
             "max_tokens": 16000,
@@ -77,7 +77,7 @@ class TestParseSpawnRequest:
         assert args["max_tokens"] == 16000
 
     def test_json_allowed_skills_from_either_key(self) -> None:
-        a = _parse_spawn_request(json.dumps({"provider": "anthropic", "allowed_skills": ["a", "b"]}))
-        b = _parse_spawn_request(json.dumps({"provider": "anthropic", "skills": ["c"]}))
+        a = _parse_spawn_request(json.dumps({"provider": "ollama", "allowed_skills": ["a", "b"]}))
+        b = _parse_spawn_request(json.dumps({"provider": "ollama", "skills": ["c"]}))
         assert a["allowed_skills"] == ["a", "b"]
         assert b["allowed_skills"] == ["c"]

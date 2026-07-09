@@ -130,12 +130,9 @@ async def run_llm_agent(
     # provider-specific constructor argument.
     if max_tokens is not None:
         kwargs["default_params"] = {"max_tokens": max_tokens}
-    # thinking + prompt caching have no OpenAI-compatible equivalent, so they are
-    # Anthropic-only — simply absent (not an error) for copilot/ollama.
-    if provider.lower().strip() in ("anthropic", "claude"):
-        if thinking:
-            kwargs["thinking"] = True
-        kwargs["cache_prompts"] = True if cache_prompts is None else cache_prompts
+    # thinking + prompt caching have no OpenAI-compatible equivalent.
+    if False:  # placeholder for future provider-specific options
+        pass
     if provider in ("mock-tool",):
         if mock_tool_name:
             kwargs["tool_name"] = mock_tool_name

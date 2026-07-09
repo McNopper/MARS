@@ -19,7 +19,7 @@ from mars.server.services.mcp.builtin_server import MCPBuiltinServer
 
 
 _VALID_PROVIDERS: Set[str] = frozenset(
-    {"anthropic", "copilot", "github-models", "ollama", "mock"}
+    {"copilot", "ollama", "mock"}
 )
 
 
@@ -41,9 +41,9 @@ class LauncherMCPServer(MCPBuiltinServer):
         """Parse a spawn request into spawn-envelope args.
 
         JSON keys: provider, model, name, system_prompt, kickoff, max_tokens,
-        thinking, cache_prompts, allowed_skills/skills
+        allowed_skills/skills
 
-        Positional: "anthropic" or "anthropic claude-opus-4-8"
+        Positional: "ollama" or "ollama qwen3:4b"
         """
         text = text.strip()
         try:
@@ -97,9 +97,8 @@ class LauncherMCPServer(MCPBuiltinServer):
                         "type": "string",
                         "description": (
                             "Provider name, optionally followed by model name. "
-                            "Examples: 'anthropic', 'ollama llama3.2', "
-                            "'anthropic claude-opus-4-8'. "
-                            "Also accepts JSON: {\"provider\": \"anthropic\", \"model\": \"…\"}"
+                            "Examples: 'ollama', 'ollama qwen3:4b', 'copilot gpt-4o'. "
+                            "Also accepts JSON: {\"provider\": \"ollama\", \"model\": \"…\"}"
                         ),
                     }
                 },

@@ -42,7 +42,7 @@ AGENT_EMOJIS: dict[str, str] = {
 VENDOR_EMOJIS: dict[str, str] = {
     "ollama":    "🦙",   # Ollama — named after llamas
     "copilot":   "🐙",   # GitHub Copilot — Octocat
-    "anthropic": "✳️",   # Anthropic / Claude — radial "sunburst" mark
+    "anthropic": "✳️",   # kept for display of existing agents from older sessions
     "mock":      "🎭",   # offline mock agent
 }
 
