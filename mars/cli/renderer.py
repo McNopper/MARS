@@ -87,6 +87,8 @@ class MARSRenderer:
 
         # Build service lookup for dot colours
         svc_lookup: dict[str, dict] = {svc["name"]: svc for svc in s.discovered_services}
+        # Spinner frame for THINKING dots (same logic as connections panel)
+        _spin = self._THINKING_SPINNER[int(time.time() * 8) % len(self._THINKING_SPINNER)]
 
         rows = _build_services_rows(s)
         total_rows = len(rows)
@@ -128,7 +130,7 @@ class MARSRenderer:
                 if svc_data.get("running"):
                     dot_style = "green"
                 elif svc_data.get("available"):
-                    dot_style = "white"
+                    dot_style = "bright_black"
                 else:
                     dot_style = "red"
                 text.append(f"{cursor_ch} ", style=sel_style)
@@ -138,15 +140,21 @@ class MARSRenderer:
 
             elif row[0] == "model":
                 provider, model_id = row[1], row[2]
-                # Check if this model is currently running as an agent
-                running = any(
-                    rec.vendor == provider and getattr(rec, "model", "") == model_id
-                    for rec in s.agents.values()
+                # Find any running agent for this model
+                running_rec = next((
+                    rec for rec in s.agents.values()
                     if rec.agent_type == "LLMAgent"
-                )
-                dot_style = "green" if running else "dim"
+                    and rec.vendor == provider
+                    and getattr(rec, "model", "") == model_id
+                ), None)
+                if running_rec is not None and running_rec.fsm_state == "THINKING":
+                    dot_char, dot_style = _spin, "bold blue"
+                elif running_rec is not None:
+                    dot_char, dot_style = "●", "green"
+                else:
+                    dot_char, dot_style = "●", "bright_black"
                 text.append(f"{cursor_ch}   ", style=sel_style)
-                text.append("● ", style=dot_style)
+                text.append(f"{dot_char} ", style=dot_style)
                 text.append(f"{model_id}\n", style="white" if is_selected else "dim")
 
             elif row[0] == "service_item":
@@ -155,7 +163,7 @@ class MARSRenderer:
                 if svc_data.get("running"):
                     dot_style = "green"
                 elif svc_data.get("available"):
-                    dot_style = "white"
+                    dot_style = "bright_black"
                 else:
                     dot_style = "red"
                 text.append(f"{cursor_ch} ", style=sel_style)

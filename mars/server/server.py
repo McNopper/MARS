@@ -262,6 +262,15 @@ class MARSServer:
             {**svc, "running": svc["name"] in running}
             for svc in service_info()
         ]
+        # Federation: available whenever the federation server is listening;
+        # running (green) only when at least one peer is connected.
+        if self._federation is not None:
+            has_peers = len(self._federation.peer_nodes) > 0
+            services = [
+                {**svc, "available": True, "running": has_peers}
+                if svc["name"] == "federation" else svc
+                for svc in services
+            ]
         return {
             "t": "state",
             "platform_name": self._state.platform_name,
