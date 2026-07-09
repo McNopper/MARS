@@ -13,10 +13,7 @@ from mars.common.models import (
 )
 from mars.cli.nav import (
     _is_conversational,
-    _mcp_agent_ids,
     _nav_connections,
-    _nav_mcp,
-    _nav_sidebar,
     _sidebar_agent_ids,
     _sync_sidebar_cursor,
 )
@@ -214,65 +211,6 @@ class TestSidebarAgentIds:
 
 
 # ---------------------------------------------------------------------------
-# _nav_sidebar
-# ---------------------------------------------------------------------------
-
-
-class TestNavSidebar:
-    def _state_with_agents(self) -> MARSState:
-        state = MARSState()
-        for i in range(1, 4):
-            state.agents[f"bot.{i}"] = AgentRecord(
-                agent_id=f"bot.{i}", agent_type="LLMAgent"
-            )
-        state.sidebar_cursor = 0
-        state.sidebar_scroll = 0
-        state.sidebar_visible_height = 10
-        # _nav_sidebar uses a hierarchical tree (server → category → item).
-        # Expand "local" server and its "unknown" vendor-category so all agent
-        # rows are visible and navigable.
-        state.sidebar_servers_expand["local"] = True
-        state.sidebar_categories_expand["local:unknown"] = True
-        return state
-
-    def test_nav_down_moves_cursor(self) -> None:
-        state = self._state_with_agents()
-        _nav_sidebar(state, 1)
-        # Row 0 = server "local", row 1 = category "unknown" — cursor moves to 1.
-        assert state.sidebar_cursor == 1
-
-    def test_nav_up_clamps_at_zero(self) -> None:
-        state = self._state_with_agents()
-        _nav_sidebar(state, -5)
-        assert state.sidebar_cursor == 0
-
-    def test_nav_down_clamps_at_last(self) -> None:
-        state = self._state_with_agents()
-        _nav_sidebar(state, 100)
-        # Hierarchy rows: server(1) + category(1) + 3 agents = 5 rows; last index = 4.
-        assert state.sidebar_cursor == 4
-
-    def test_nav_leaves_current_agent_unchanged(self) -> None:
-        state = self._state_with_agents()
-        state.current_agent = "bot.1"
-        _nav_sidebar(state, 1)
-        assert state.current_agent == "bot.1"
-
-    def test_nav_advances_through_hierarchy_rows(self) -> None:
-        """Cursor moves through server → category → item rows step by step."""
-        state = self._state_with_agents()
-        assert state.sidebar_cursor == 0          # server row
-        _nav_sidebar(state, 1)
-        assert state.sidebar_cursor == 1          # category row
-        _nav_sidebar(state, 1)
-        assert state.sidebar_cursor == 2          # first agent row
-
-    def test_nav_empty_state_is_noop(self) -> None:
-        state = MARSState()
-        _nav_sidebar(state, 1)  # Should not raise
-
-
-# ---------------------------------------------------------------------------
 # _sync_sidebar_cursor
 # ---------------------------------------------------------------------------
 
@@ -312,85 +250,4 @@ class TestSyncSidebarCursor:
         assert state.sidebar_cursor == 5
 
 
-# ---------------------------------------------------------------------------
-# _mcp_agent_ids
-# ---------------------------------------------------------------------------
 
-
-class TestMCPAgentIds:
-    def test_returns_only_service_agents(self) -> None:
-        state = MARSState()
-        state.agents["llm.1"] = AgentRecord(agent_id="llm.1", agent_type="LLMAgent")
-        state.agents["svc.1"] = AgentRecord(agent_id="svc.1", agent_type="Provider")
-        ids = _mcp_agent_ids(state)
-        assert "svc.1" in ids
-        assert "llm.1" not in ids
-
-    def test_excludes_echo_bots(self) -> None:
-        state = MARSState()
-        state.agents["echo-text"] = AgentRecord(agent_id="echo-text", agent_type="EchoBot")
-        state.agents["svc.1"] = AgentRecord(agent_id="svc.1", agent_type="Provider")
-        ids = _mcp_agent_ids(state)
-        assert "echo-text" not in ids
-        assert "svc.1" in ids
-
-    def test_returns_sorted(self) -> None:
-        state = MARSState()
-        state.agents["svc.z"] = AgentRecord(agent_id="svc.z", agent_type="Provider")
-        state.agents["svc.a"] = AgentRecord(agent_id="svc.a", agent_type="Provider")
-        ids = _mcp_agent_ids(state)
-        assert ids == sorted(ids)
-
-    def test_empty_state_returns_empty(self) -> None:
-        assert _mcp_agent_ids(MARSState()) == []
-
-
-# ---------------------------------------------------------------------------
-# _nav_mcp
-# ---------------------------------------------------------------------------
-
-
-class TestNavMCP:
-    def _state_with_services(self) -> MARSState:
-        state = MARSState()
-        for name in ["svc.alpha", "svc.beta", "svc.gamma"]:
-            state.agents[name] = AgentRecord(agent_id=name, agent_type="Provider")
-        state.mcp_cursor = 0
-        state.mcp_scroll = 0
-        state.mcp_visible_height = 10
-        return state
-
-    def test_nav_down_moves_cursor(self) -> None:
-        state = self._state_with_services()
-        _nav_mcp(state, 1)
-        assert state.mcp_cursor == 1
-
-    def test_nav_up_clamps_at_zero(self) -> None:
-        state = self._state_with_services()
-        _nav_mcp(state, -5)
-        assert state.mcp_cursor == 0
-
-    def test_nav_down_clamps_at_last(self) -> None:
-        state = self._state_with_services()
-        _nav_mcp(state, 100)
-        ids = _mcp_agent_ids(state)
-        assert state.mcp_cursor == len(ids) - 1
-
-    def test_scroll_follows_cursor_down(self) -> None:
-        state = self._state_with_services()
-        state.mcp_visible_height = 2   # only 2 visible at a time
-        state.mcp_cursor = 0
-        _nav_mcp(state, 2)             # cursor → 2, beyond window
-        assert state.mcp_scroll >= 1  # scroll must have advanced
-
-    def test_scroll_follows_cursor_up(self) -> None:
-        state = self._state_with_services()
-        state.mcp_visible_height = 2
-        state.mcp_cursor = 2
-        state.mcp_scroll = 2
-        _nav_mcp(state, -2)            # cursor → 0, before window
-        assert state.mcp_scroll == 0
-
-    def test_nav_empty_state_is_noop(self) -> None:
-        state = MARSState()
-        _nav_mcp(state, 1)             # Should not raise

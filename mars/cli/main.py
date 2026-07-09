@@ -139,7 +139,6 @@ from mars.common.models import (
 )
 from mars.cli.nav import (
     _CONVERSATIONAL_TYPES,
-    _SIDEBAR_PINNED,
     _is_conversational,
     _nav_connections,
     _sidebar_agent_ids,
@@ -324,7 +323,7 @@ __all__ = [
     "HUMAN_AVATARS", "AGENT_EMOJIS", "EVENT_ICONS", "_AGENT_ROLE",
     "ChatMessage", "AgentRecord", "FeedItem",
     "DEFAULT_PORT", "DEFAULT_FEDERATION_PORT", "MARSState",
-    "_SIDEBAR_PINNED", "_CONVERSATIONAL_TYPES", "_is_conversational",
+    "_CONVERSATIONAL_TYPES", "_is_conversational",
     "_sidebar_agent_ids", "_nav_connections", "_sync_sidebar_cursor",
     "_local_ip", "_time_ago", "_normalize_agent_type",
     "_running_provider_names", "_load_dotenv",

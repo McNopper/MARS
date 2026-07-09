@@ -43,10 +43,9 @@ class MARSState:
     sidebar_visible_height: int = 20
     # cursor index into the ordered sidebar agent list (for keyboard/wheel nav)
     sidebar_cursor: int = 0
-    # server expansion state for hierarchical sidebar view
-    sidebar_servers_expand: dict[str, bool] = field(default_factory=dict)  # server_name → is_expanded
-    # category expansion state for hierarchical sidebar view (key: "server:category")
-    sidebar_categories_expand: dict[str, bool] = field(default_factory=dict)  # server:category → is_expanded
+    # server expansion state — unused, kept for wire compatibility
+    sidebar_servers_expand: dict[str, bool] = field(default_factory=dict)
+    sidebar_categories_expand: dict[str, bool] = field(default_factory=dict)
     connections_cursor: int = 0
     connections_scroll: int = 0
     connections_visible_height: int = 10
@@ -63,7 +62,7 @@ class MARSState:
     provider_models: dict = field(default_factory=dict)
     # Expand/collapse state for LLM providers in the services panel.
     services_expanded: dict = field(default_factory=dict)
-    # which panel has keyboard focus: "sidebar" | "mcp" | "chat" | "connections" | "a2a"
+    # which panel has keyboard focus: "chat" | "services" | "connections"
     panel_focus: str = "chat"
     # this CLI's own agent ID — 🏠 in sidebar; set at startup
     my_agent_id: str = "cli-user@1"

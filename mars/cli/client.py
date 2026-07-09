@@ -224,7 +224,7 @@ class MARSClientTerminal:
         elif cmd == "version":
             _cmd_version(self._state)
         elif cmd == "theme":
-            _cmd_theme(self._state, " ".join(args))
+            state.status_line = "Theme switching not yet implemented."
         elif cmd == "share":
             _cmd_share(self._state, " ".join(args))
         elif cmd == "search":

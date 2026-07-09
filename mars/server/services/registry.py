@@ -196,14 +196,8 @@ REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
     # -- Builtin (in-process, start automatically) --
     # Discovery service (primary bootstrap — LLMs receive this on spawn)
     "discovery":    ("mars.server.services.builtin.discovery",        "DiscoveryService",             "service", True,  False),
-    # Status service (runtime introspection)
-    "status":       ("mars.server.services.builtin.status_service",   "StatusService",                "service", True,  False),
-    # Launcher service (spawn new LLM agents at runtime)
-    "launcher":     ("mars.server.services.builtin.launcher_service", "LauncherService",              "service", True,  False),
     # Profiler (performance monitoring, off by default)
     "profiler":     ("mars.server.services.builtin.profiler",         "ProfilerService",              "service", False, False),
-    # CLI connection management
-    "cli":          ("mars.server.services.builtin.cli_service",      "CLIService",                   "service", True,  False),
     # -- External MCP servers (require user-supplied command) --
     # MCP filesystem server (stdio)
     "filesystem":   ("mars.server.services.mcp.service",              "MCPService",                   "service", False, False),
@@ -218,9 +212,6 @@ _ALIASES: dict[str, str] = {}
 # Services that start automatically with MARS
 DEFAULT_SERVICES: list[str] = [
     "discovery",   # Dynamic service discovery for LLMs (primary bootstrap service)
-    "status",      # Core status service
-    "launcher",    # Agent launcher
-    "cli",         # CLI connection handler
 ]
 
 # Free-tier services (no API cost)

@@ -1,4 +1,4 @@
-"""Sidebar / connections / MCP / services panel navigation helpers.
+"""Services / connections panel navigation helpers.
 
 These are CLI-only TUI helpers: they operate on :class:`~mars.common.state.MARSState`
 cursor/scroll fields and contain no rendering logic.
@@ -9,10 +9,8 @@ from mars.common.agent_record import AgentRecord
 from mars.common.state import MARSState
 
 # ---------------------------------------------------------------------------
-# Sidebar navigation helpers
+# Shared helpers
 # ---------------------------------------------------------------------------
-
-_SIDEBAR_PINNED: tuple = ()  # no agents pinned at top (echo bots hidden)
 
 _CONVERSATIONAL_TYPES = frozenset({
     "LLMAgent", "HumanUser", "CLIBridgeAgent", "BridgeAgent",
@@ -24,157 +22,11 @@ def _is_conversational(rec: AgentRecord) -> bool:
 
 
 def _sidebar_agent_ids(state: MARSState) -> list[str]:
-    """Return the ordered list of conversational agent IDs (navigable in sidebar)."""
-    pinned = [aid for aid in _SIDEBAR_PINNED if aid in state.agents]
-    others = [
+    """Return the ordered list of conversational agent IDs."""
+    return [
         aid for aid in state.agents
-        if aid not in _SIDEBAR_PINNED and _is_conversational(state.agents[aid])
+        if _is_conversational(state.agents[aid])
     ]
-    return pinned + others
-
-
-def _nav_sidebar(state: MARSState, delta: int) -> None:
-    """Move sidebar cursor by *delta* rows in server→category→item hierarchy view."""
-    # Group by server, then by category
-    servers: dict[str, dict[str, list[tuple[str, AgentRecord]]]] = {}
-    nav_ids = _sidebar_agent_ids(state)
-    for aid in nav_ids:
-        if aid in state.agents:
-            rec = state.agents[aid]
-            server = rec.server_addr or "local"
-            if server not in servers:
-                servers[server] = {"User": [], "_providers": {}}
-
-            if rec.agent_type in ("HumanUser", "HUMAN"):
-                servers[server]["User"].append((aid, rec))
-            else:
-                provider = rec.vendor or "unknown"
-                if provider not in servers[server]["_providers"]:
-                    servers[server]["_providers"][provider] = []
-                servers[server]["_providers"][provider].append((aid, rec))
-
-    if not servers:
-        return
-
-    # Build row index: (row_number, level, server, category, agent_id)
-    # level: 0 = server, 1 = category, 2 = item
-    rows: list[tuple[int, int, str, str | None, str | None]] = []
-    current_row = 0
-
-    for server, categories in sorted(servers.items()):
-        rows.append((current_row, 0, server, None, None))
-        current_row += 1
-
-        is_server_expanded = state.sidebar_servers_expand.get(server, False)
-        if is_server_expanded:
-            # User category
-            if categories["User"]:
-                rows.append((current_row, 1, server, "User", None))
-                current_row += 1
-
-                cat_key = f"{server}:User"
-                is_cat_expanded = state.sidebar_categories_expand.get(cat_key, False)
-                if is_cat_expanded:
-                    for aid, rec in categories["User"]:
-                        rows.append((current_row, 2, server, "User", aid))
-                        current_row += 1
-
-            # Provider categories
-            for provider in sorted(categories["_providers"].keys()):
-                rows.append((current_row, 1, server, provider, None))
-                current_row += 1
-
-                cat_key = f"{server}:{provider}"
-                is_cat_expanded = state.sidebar_categories_expand.get(cat_key, False)
-                if is_cat_expanded:
-                    for aid, rec in categories["_providers"][provider]:
-                        rows.append((current_row, 2, server, provider, aid))
-                        current_row += 1
-
-    if not rows:
-        return
-
-    # Move cursor
-    total_rows = len(rows)
-    new_cursor = max(0, min(state.sidebar_cursor + delta, total_rows - 1))
-    state.sidebar_cursor = new_cursor
-
-    # Scroll-follow
-    win = max(1, state.sidebar_visible_height)
-    if new_cursor < state.sidebar_scroll:
-        state.sidebar_scroll = new_cursor
-    elif new_cursor >= state.sidebar_scroll + win:
-        state.sidebar_scroll = new_cursor - win + 1
-
-    # Selection is now handled by Communications panel, not sidebar
-    # The sidebar is purely for viewing the hierarchy
-
-
-def _nav_sidebar_toggle_expand(state: MARSState, expand: bool) -> None:
-    """Toggle expansion of the server or category at current cursor position."""
-    # Group by server, then by category
-    servers: dict[str, dict[str, list[tuple[str, AgentRecord]]]] = {}
-    nav_ids = _sidebar_agent_ids(state)
-    for aid in nav_ids:
-        if aid in state.agents:
-            rec = state.agents[aid]
-            server = rec.server_addr or "local"
-            if server not in servers:
-                servers[server] = {"User": [], "_providers": {}}
-
-            if rec.agent_type in ("HumanUser", "HUMAN"):
-                servers[server]["User"].append((aid, rec))
-            else:
-                provider = rec.vendor or "unknown"
-                if provider not in servers[server]["_providers"]:
-                    servers[server]["_providers"][provider] = []
-                servers[server]["_providers"][provider].append((aid, rec))
-
-    if not servers:
-        return
-
-    # Build row index to find what's at cursor
-    rows: list[tuple[int, int, str, str | None]] = []  # (row_number, level, server, category)
-    # level: 0 = server, 1 = category
-    current_row = 0
-
-    for server, categories in sorted(servers.items()):
-        rows.append((current_row, 0, server, None))
-        current_row += 1
-
-        is_server_expanded = state.sidebar_servers_expand.get(server, False)
-        if is_server_expanded:
-            # User category
-            if categories["User"]:
-                rows.append((current_row, 1, server, "User"))
-                current_row += 1
-
-                cat_key = f"{server}:User"
-                is_cat_expanded = state.sidebar_categories_expand.get(cat_key, False)
-                if is_cat_expanded:
-                    current_row += len(categories["User"])
-
-            # Provider categories
-            for provider in sorted(categories["_providers"].keys()):
-                rows.append((current_row, 1, server, provider))
-                current_row += 1
-
-                cat_key = f"{server}:{provider}"
-                is_cat_expanded = state.sidebar_categories_expand.get(cat_key, False)
-                if is_cat_expanded:
-                    current_row += len(categories["_providers"][provider])
-
-    # Find what's at cursor
-    if state.sidebar_cursor >= len(rows):
-        return
-
-    row_num, level, server_name, category_name = rows[state.sidebar_cursor]
-
-    if level == 0:  # Server row
-        state.sidebar_servers_expand[server_name] = expand
-    elif level == 1 and category_name:  # Category row
-        cat_key = f"{server_name}:{category_name}"
-        state.sidebar_categories_expand[cat_key] = expand
 
 
 def _nav_connections(state: MARSState, delta: int) -> None:
@@ -238,32 +90,6 @@ def _sync_sidebar_cursor(state: MARSState) -> None:
             state.sidebar_scroll = idx
         elif idx >= state.sidebar_scroll + win:
             state.sidebar_scroll = idx - win + 1
-
-
-# ---------------------------------------------------------------------------
-# MCP panel navigation helpers
-# ---------------------------------------------------------------------------
-
-def _mcp_agent_ids(state: MARSState) -> list[str]:
-    """Sorted list of MCP service agent IDs (non-conversational, non-echo)."""
-    return sorted(
-        aid for aid, rec in state.agents.items()
-        if not _is_conversational(rec) and rec.agent_type != "EchoBot"
-    )
-
-
-def _nav_mcp(state: MARSState, delta: int) -> None:
-    """Move the MCP cursor by *delta* rows and scroll-follow to keep it visible."""
-    ids = _mcp_agent_ids(state)
-    if not ids:
-        return
-    cursor = max(0, min(state.mcp_cursor + delta, len(ids) - 1))
-    state.mcp_cursor = cursor
-    win = max(1, state.mcp_visible_height)
-    if cursor < state.mcp_scroll:
-        state.mcp_scroll = cursor
-    elif cursor >= state.mcp_scroll + win:
-        state.mcp_scroll = cursor - win + 1
 
 
 def _build_services_rows(state: MARSState) -> list[tuple]:

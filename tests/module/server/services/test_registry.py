@@ -3,15 +3,14 @@ from mars.server.services.registry import get_service, list_services, get_servic
 
 def test_registry_has_built_in_agents():
     services = list_services()
-    assert "status" in services
-    assert "launcher" in services
+    assert "discovery" in services
 
 
 def test_get_returns_spec():
     """Test that get_service returns a Service instance."""
-    service = get_service("status")
+    service = get_service("discovery")
     assert service is not None
-    assert service.service_id == "status"
+    assert service.service_id == "discovery"
 
 
 def test_get_unknown_raises_error():
@@ -25,9 +24,7 @@ def test_get_unknown_raises_error():
 
 def test_list_services_returns_list():
     services = list_services()
-    assert len(services) >= 4  # discovery, status, launcher, cli
-    assert "status" in services
-    assert "launcher" in services
+    assert len(services) >= 1
     assert "discovery" in services
 
 
@@ -41,9 +38,9 @@ def test_each_service_has_required_fields():
 
 def test_get_service_info():
     """Test get_service_info returns proper metadata."""
-    info = get_service_info("status")
+    info = get_service_info("discovery")
     assert info is not None
-    assert info["name"] == "status"
+    assert info["name"] == "discovery"
     assert info["type"] == "service"
     assert info["default"] is True
 
@@ -58,9 +55,6 @@ def test_default_services():
     """Test that expected services are marked as default."""
     from mars.server.services.registry import DEFAULT_SERVICES
     assert "discovery" in DEFAULT_SERVICES
-    assert "status" in DEFAULT_SERVICES
-    assert "launcher" in DEFAULT_SERVICES
-    assert "cli" in DEFAULT_SERVICES
 
 
 def test_free_services():

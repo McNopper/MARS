@@ -278,7 +278,6 @@ class MARSServer:
                 }
                 for item in list(self._state.feed)
             ],
-            "problems": [],
             "chats": chats,
             # Service registry — same data any agent can get via DiscoveryService.
             # Included here so the TUI can render the services panel without
