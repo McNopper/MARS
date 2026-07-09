@@ -101,34 +101,31 @@ python -m mars.cli.main --provider ollama
 
 ## Services
 
-All services implement the `Service` interface (`service_id`, `capabilities`, `call_tool`, `initialize`, `shutdown`) and are exposed via MCP.
+Two categories exist. LLM Agents are conversational inference backends. Everything else is an **MCP Service** — discovered and invoked through MCP protocol, regardless of whether it runs in-process, as a subprocess, or as a remote peer.
 
-### Built-in Services (always started)
+### LLM Agents
 
-| Service | Description |
-|---------|-------------|
-| `discovery` | **Bootstrap service** — LLMs start here; returns all available services and their tools |
-| `status` | Runtime introspection — agents, problems, activity |
-| `launcher` | Spawn new LLM agents at runtime |
-| `agent-comm` | Agent-to-agent messaging utilities |
-| `cli` | CLI connection management |
-
-### LLM Providers
-
-| Provider | Notes |
-|----------|-------|
+| Agent | Notes |
+|-------|-------|
 | `ollama` | Local Ollama server |
 | `anthropic` / `claude` | Anthropic Claude API |
 | `copilot` | GitHub Copilot Chat |
 | `mock` / `mock-tool` | Test-only — hidden from discovery |
 
-### External Services (require configuration)
+### MCP Services
 
-| Service | Notes |
-|---------|-------|
-| `filesystem` | MCP filesystem server (stdio) |
-| `mcp-generic` | Generic MCP server adapter |
-| `remote-mars` | A2A peer connection to remote MARS nodes |
+Everything else — builtin utilities, external MCP servers, A2A peers. All discovered and invoked through MCP protocol.
+
+| Service | Auto-start | Notes |
+|---------|:----------:|-------|
+| `discovery` | ✅ | **Bootstrap** — LLMs receive this on spawn; returns all services and tools |
+| `status` | ✅ | Runtime introspection — agents, problems, activity |
+| `launcher` | ✅ | Spawn new LLM agents at runtime |
+| `agent-comm` | ✅ | Agent-to-agent messaging utilities |
+| `cli` | ✅ | CLI connection management |
+| `filesystem` | — | MCP filesystem server (stdio, requires config) |
+| `mcp-generic` | — | Generic MCP server adapter (requires config) |
+| `remote-mars` | — | A2A peer connection to remote MARS nodes (requires config) |
 
 ## Architecture
 

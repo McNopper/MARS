@@ -91,14 +91,17 @@ class MARSRenderer:
                 height=height,
             )
 
-        type_emojis = {"llm": "🤖", "mcp": "⚙️", "a2a": "🌐", "builtin": "🔧"}
-        by_type: dict[str, list[dict]] = {"llm": [], "mcp": [], "a2a": [], "builtin": []}
+        type_emojis = {"llm": "🤖", "service": "⚙️"}
+        by_type: dict[str, list[dict]] = {"llm": [], "service": []}
         for svc in services:
-            by_type.setdefault(svc.get("type", "builtin"), []).append(svc)
+            raw = svc.get("type", "service")
+            # Normalise legacy type names from older server versions
+            bucket = raw if raw in by_type else "service"
+            by_type[bucket].append(svc)
 
         # Build flat row list for cursor/scroll
         rows: list[tuple[str, str | None]] = []  # (type_key, svc_name_or_None)
-        for svc_type in ("llm", "mcp", "a2a", "builtin"):
+        for svc_type in ("llm", "service"):
             if not by_type.get(svc_type):
                 continue
             rows.append((svc_type, None))
@@ -121,8 +124,9 @@ class MARSRenderer:
             if svc_name is None:
                 emoji = type_emojis.get(svc_type, "📦")
                 count = len(by_type[svc_type])
+                label = "LLM Agents" if svc_type == "llm" else "MCP Services"
                 text.append(f"{cursor_ch} {emoji} ", style=style)
-                text.append(f"{svc_type.upper()} Services", style="bold white" if is_selected else "white")
+                text.append(label, style="bold white" if is_selected else "white")
                 text.append(f" ({count})\n", style="dim")
             else:
                 dot_style = "green" if any(

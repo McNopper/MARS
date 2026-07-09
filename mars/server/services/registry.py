@@ -4,14 +4,12 @@ Usage
 -----
     from mars.server.services import get_service, list_services
 
-    # LLM services
+    # LLM agents
     ollama = get_service("ollama", model="llama3.2")
     anthropic = get_service("anthropic")
 
-    # MCP services
+    # Services (all accessed via MCP)
     filesystem = get_service("filesystem", command="uvicorn mcp-server")
-
-    # A2A services
     remote = get_service("remote-mars", url="http://localhost:8000")
 
     print(list_services())
@@ -20,19 +18,16 @@ Usage
 Adding a new service
 --------------------
 1. Create service class in appropriate subdirectory:
-   - LLM: mars/server/services/llm/
-   - MCP: mars/server/services/mcp/
-   - A2A: mars/server/services/a2a/
-   - Builtin: mars/server/services/builtin/
+   - LLM agents: mars/server/services/llm/
+   - Services (MCP): mars/server/services/builtin/, mcp/, a2a/
 2. Add entry to REGISTRY below.
 3. Add to DEFAULT_SERVICES if it should start automatically.
 
 Service types
 -------------
-* llm - Language model providers (Ollama, Anthropic, Copilot)
-* mcp - MCP (Model Context Protocol) servers
-* a2a - A2A (Agent-to-Agent) remote MARS connections
-* builtin - Built-in utility services (status, launcher, profiler)
+* llm     - Language model providers (Ollama, Anthropic, Copilot) — conversational agents
+* service - MCP Services: builtin utilities, MCP servers, A2A peers
+            All exposed and discovered through MCP protocol.
 """
 
 from __future__ import annotations
@@ -102,7 +97,7 @@ def _is_available(name: str) -> bool:
     """Return True if *name* has the credentials/prerequisites it needs."""
     probe = _AVAILABILITY.get(name)
     if probe is None:
-        return True  # builtin / mcp / a2a — always considered available
+        return True  # service — always considered available
     return bool(probe())
 
 
@@ -151,33 +146,14 @@ def get_agent_spec(name: str) -> AgentSpec | None:
     if service_type == "llm":
         return None
 
-    # Map service types to protocols
-    protocol_map = {
-        "mcp": "mcp",
-        "a2a": "a2a",
-        "builtin": "mcp"  # Built-in services use MCP protocol
-    }
-    protocol = protocol_map.get(service_type, "mcp")
-
-    # Determine cost
-    cost = "free" if key in FREE_SERVICES else "demand"
-
-    # Create a placeholder command for services that don't have subprocess commands
-    if service_type == "builtin":
-        command = f"python -m mars.server.services.builtin.{class_name.lower()}"
-    elif service_type == "mcp":
-        command = f"python -m mars.server.services.mcp.service --name {key}"
-    else:
-        command = f"python -m mars.server.services.{service_type}.service --name {key}"
-
     return AgentSpec(
         name=key,
-        command=command,
-        cost=cost,
-        description=f"{key} service ({service_type})",
+        command=f"python -m mars.server.services.{key}",
+        cost="free" if key in FREE_SERVICES else "demand",
+        description=f"{key} service",
         skills=[],
         category="provider",
-        protocol=protocol
+        protocol="mcp",
     )
 
 
@@ -187,8 +163,13 @@ def resolve_command(cmd_str: str) -> list[str]:
 
 # Registry: service name → (module path, class name, service_type, default, test_only)
 # Lazy imports – the module is only loaded when get_service() is called.
+#
+# service_type is one of:
+#   "llm"     — conversational LLM agent (spawned as a wire process)
+#   "service" — MCP Service: builtin utility, external MCP server, or A2A peer
+#               all discovered and invoked through MCP protocol
 REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
-    # === LLM Services ===
+    # === LLM Agents ===
     # GitHub Copilot Chat (uses GITHUB_TOKEN / gh auth login – no extra SDK)
     "copilot":   ("mars.server.services.llm.copilot",   "CopilotService",      "llm", False, False),
     # Anthropic Claude (pip install anthropic + ANTHROPIC_API_KEY)
@@ -200,29 +181,28 @@ REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
     # Mock provider that emits tool calls – for tool round-trip tests only
     "mock-tool": ("mars.server.services.llm.mock",      "ToolCallMockService",  "llm", False, True),
 
-    # === MCP Services ===
+    # === Services (all accessed via MCP) ===
+    # -- Builtin (in-process, start automatically) --
+    # Discovery service (primary bootstrap — LLMs receive this on spawn)
+    "discovery":    ("mars.server.services.builtin.discovery",        "DiscoveryService",             "service", True,  False),
+    # Status service (runtime introspection)
+    "status":       ("mars.server.services.builtin.status_service",   "StatusService",                "service", True,  False),
+    # Launcher service (spawn new LLM agents at runtime)
+    "launcher":     ("mars.server.services.builtin.launcher_service", "LauncherService",              "service", True,  False),
+    # Agent-to-agent messaging utilities
+    "agent-comm":   ("mars.server.services.builtin.agent_service",    "AgentCommunicationService",    "service", True,  False),
+    # Profiler (performance monitoring, off by default)
+    "profiler":     ("mars.server.services.builtin.profiler",         "ProfilerService",              "service", False, False),
+    # CLI connection management
+    "cli":          ("mars.server.services.builtin.cli_service",      "CLIService",                   "service", True,  False),
+    # -- External MCP servers (require user-supplied command) --
     # MCP filesystem server (stdio)
-    "filesystem": ("mars.server.services.mcp.service",  "MCPService",              "mcp", False, False),
-    # Generic MCP server adapter (can wrap any stdio MCP server)
-    "mcp-generic": ("mars.server.services.mcp.service", "MCPService",              "mcp", False, False),
-
-    # === A2A Services ===
-    # A2A peer connection to remote MARS instance
-    "remote-mars": ("mars.server.services.a2a.service",  "A2AService",               "a2a", False, False),
-
-    # === Builtin Services ===
-    # Discovery service (dynamic service discovery for LLMs - starts automatically)
-    "discovery":    ("mars.server.services.builtin.discovery", "DiscoveryService",       "builtin", True,  False),
-    # Status service (always runs)
-    "status":       ("mars.server.services.builtin.status_service",  "StatusService",        "builtin", True,  False),
-    # Launcher service (handles agent spawning)
-    "launcher":     ("mars.server.services.builtin.launcher_service", "LauncherService",      "builtin", True,  False),
-    # Agent Communication service (agent-to-agent messaging)
-    "agent-comm":   ("mars.server.services.builtin.agent_service", "AgentCommunicationService", "builtin", True,  False),
-    # Profiler service (performance monitoring)
-    "profiler":     ("mars.server.services.builtin.profiler", "ProfilerService",     "builtin", False, False),
-    # CLI service (handles CLI connections)
-    "cli":          ("mars.server.services.builtin.cli_service",       "CLIService",           "builtin", True,  False),
+    "filesystem":   ("mars.server.services.mcp.service",              "MCPService",                   "service", False, False),
+    # Generic MCP server adapter (wraps any stdio MCP server)
+    "mcp-generic":  ("mars.server.services.mcp.service",              "MCPService",                   "service", False, False),
+    # -- A2A peers (require peer address) --
+    # A2A peer connection to a remote MARS instance
+    "remote-mars":  ("mars.server.services.a2a.service",              "A2AService",                   "service", False, False),
 }
 
 # Aliases

@@ -35,7 +35,7 @@ def test_each_service_has_required_fields():
     """Test that all services have proper metadata."""
     for info in service_info():
         assert info["name"]
-        assert info["type"] in ["llm", "mcp", "a2a", "builtin"]
+        assert info["type"] in ["llm", "service"]
         assert info["module"]
 
 
@@ -44,7 +44,7 @@ def test_get_service_info():
     info = get_service_info("status")
     assert info is not None
     assert info["name"] == "status"
-    assert info["type"] == "builtin"
+    assert info["type"] == "service"
     assert info["default"] is True
 
 
