@@ -129,10 +129,15 @@ class MARSRenderer:
                 text.append(label, style="bold white" if is_selected else "white")
                 text.append(f" ({count})\n", style="dim")
             else:
-                dot_style = "green" if any(
-                    s2["name"] == svc_name and s2.get("available") and s2.get("running")
-                    for s2 in by_type[svc_type]
-                ) else "dim"
+                svc_data = next(
+                    (s2 for s2 in by_type[svc_type] if s2["name"] == svc_name), {}
+                )
+                if svc_data.get("running"):
+                    dot_style = "green"
+                elif svc_data.get("available"):
+                    dot_style = "white"
+                else:
+                    dot_style = "red"
                 text.append(f"{cursor_ch} ", style=style)
                 text.append("● ", style=dot_style)
                 text.append(f"{svc_name}\n", style="white" if is_selected else "dim")
