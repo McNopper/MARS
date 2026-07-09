@@ -37,6 +37,11 @@ def _make_state_with_agent(agent_id: str = "llm.mock@1") -> MARSState:
         agent_id=agent_id, agent_type="LLMAgent",
         domain="default", platform="local", skills=[],
     )
+    # Populate discovered_services so /agents available has data to show
+    state.discovered_services = [
+        {"name": "ollama",     "type": "llm",     "available": True,  "running": False, "description": "Local Ollama server"},
+        {"name": "discovery",  "type": "service", "available": True,  "running": True,  "description": "Service discovery"},
+    ]
     return state
 
 

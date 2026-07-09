@@ -192,24 +192,27 @@ def _cmd_agents(state: Any) -> None:
 
 
 def _cmd_agents_available(state: Any) -> None:
-    """List available providers in the reply panel (``/agents available``)."""
-    from mars.cli.utils import _running_provider_names
-    from mars.server.services.registry import all_specs
-
-    specs = all_specs()
-    running = _running_provider_names(state)
+    """List available LLM providers and MCP services (``/agents available``)."""
+    services = getattr(state, "discovered_services", [])
+    if not services:
+        state.status_line = "No services discovered yet — is the server connected?"
+        return
     rows = [
-        "| Name | Status | Cost | Skills | Description |",
-        "| --- | --- | --- | --- | --- |",
+        "| Name | Type | Status | Description |",
+        "| --- | --- | --- | --- |",
     ]
-    for spec in specs:
-        is_running = spec.name in running or f"{spec.name}-agent" in running or f"{spec.name}-provider" in running
-        status = "🟢 running" if is_running else "⚪ available"
-        skills = ", ".join(spec.skills[:3])
-        rows.append(
-            f"| `{spec.name}` | {status} | {spec.cost} | {skills} | {spec.description} |"
-        )
-    _reply(state, "🔧 available providers", "\n".join(rows))
+    for svc in services:
+        name = svc.get("name", "?")
+        svc_type = svc.get("type", "service")
+        if svc.get("running"):
+            status = "🟢 running"
+        elif svc.get("available"):
+            status = "⚪ available"
+        else:
+            status = "🔴 unavailable"
+        desc = svc.get("description", "")
+        rows.append(f"| `{name}` | {svc_type} | {status} | {desc} |")
+    _reply(state, "🔧 available services", "\n".join(rows))
 
 
 def _cmd_read(state: Any, path: str) -> None:
@@ -293,7 +296,14 @@ def _cmd_context(state: Any) -> None:
 
 
 def _cmd_instructions(state: Any, writer: Any) -> None:
-    """Load AGENTS.md / CLAUDE.md / copilot-instructions.md and send to current agent (``/instructions``)."""
+    """Load AGENTS.md / CLAUDE.md / copilot-instructions.md and send to current agent (``/instructions``).
+
+    .. note::
+        TODO: This sends instruction files as a plain user message, not as a true
+        system-prompt injection.  A proper implementation would prepend the content
+        to the agent's system prompt via a wire command (requires server support to
+        insert/replace the system message in the agent's history).
+    """
     if not (target := _require_agent(state)):
         return
     candidates = [
@@ -320,7 +330,14 @@ def _cmd_instructions(state: Any, writer: Any) -> None:
 
 
 def _cmd_compact(state: Any, writer: Any) -> None:
-    """Summarize and compact conversation history (``/compact``)."""
+    """Summarize and compact conversation history (``/compact``).
+
+    .. note::
+        TODO: This only clears the *client-side* chat deque.  The server-side
+        agent still has the full history in its LLM context window.  A proper
+        implementation needs a ``/compact`` wire command that asks the server to
+        replace the agent's message list with a summary (requires server support).
+    """
     if not (target := _require_agent(state)):
         return
     rec = state.agents[target]
@@ -361,7 +378,14 @@ def _cmd_share(state: Any, args: str = "") -> None:
 
 
 def _cmd_rewind(state: Any) -> None:
-    """Remove the last user + agent message pair (``/rewind``)."""
+    """Remove the last user + agent message pair (``/rewind``).
+
+    .. note::
+        TODO: This only removes messages from the *client-side* display deque.
+        The server-side agent retains the full history in its LLM context.
+        A proper implementation requires a ``/rewind`` wire command so the server
+        can drop the last turn from the agent's message list before the next call.
+    """
     if not (target := _require_agent(state)):
         return
     rec = state.agents[target]
@@ -404,7 +428,14 @@ def _cmd_search(state: Any, query: str) -> None:
 
 
 def _cmd_ask(state: Any, writer: Any, question: str) -> None:
-    """Send a one-off side question without polluting history (``/ask <question>``)."""
+    """Send a one-off side question without polluting history (``/ask <question>``).
+
+    .. note::
+        TODO: The "do not add to history" instruction is only a text hint in the
+        prompt — it is not enforced by the server.  A proper implementation would
+        use a separate ephemeral context or a dedicated wire flag so the agent's
+        history list is not extended by this exchange.
+    """
     if not question:
         state.status_line = "Usage: /ask <question>"
         return
@@ -435,11 +466,23 @@ def _cmd_plan(state: Any, writer: Any, task: str) -> None:
 
 def _cmd_version(state: Any) -> None:
     """Show the installed MARS version (``/version``)."""
+    v = "unknown"
+    # Try importlib first (works when installed as a package)
     try:
         from importlib.metadata import version as _ver
         v = _ver("mars")
     except Exception:
-        v = "unknown"
+        pass
+    # Fall back to reading pyproject.toml from repo root
+    if v == "unknown":
+        try:
+            import tomllib  # Python 3.11+
+            pyproject = _Path(__file__).parents[2] / "pyproject.toml"
+            if pyproject.exists():
+                data = tomllib.loads(pyproject.read_text("utf-8"))
+                v = data.get("project", {}).get("version", "unknown")
+        except Exception:
+            pass
     state.status_line = f"MARS v{v}"
 
 
@@ -452,7 +495,14 @@ _THEMES: dict[str, dict[str, str]] = {
 
 
 def _cmd_theme(state: Any, theme: str) -> None:
-    """Switch color theme (``/theme [name]``)."""
+    """Switch color theme (``/theme [name]``).
+
+    .. note::
+        TODO: ``state.theme`` is stored but the renderer does not yet read it.
+        To fully implement theming, ``renderer.py`` needs to replace its
+        hard-coded ``"cyan"`` / ``"blue"`` panel border colours with lookups
+        from ``_THEMES[state.theme]``.
+    """
     if not theme:
         current = getattr(state, "theme", "dark")
         available = ", ".join(_THEMES.keys())

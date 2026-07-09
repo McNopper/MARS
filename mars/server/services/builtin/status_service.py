@@ -99,21 +99,24 @@ class StatusService(BuiltinService):
             return f"Unknown status tool: {tool_name}"
 
     async def _get_status(self, detail_level: str = "summary") -> dict[str, Any]:
-        """Get the current runtime status. Not yet wired to MARSState."""
+        # TODO: Wire to live MARSState — pass MARSState into StatusService at
+        # construction time so get_status can return real agent counts, uptime,
+        # and FSM states instead of this stub.
         return {
             "error": "not_implemented",
             "message": "StatusService is not yet wired to live MARSState. Runtime introspection is pending."
         }
 
     async def _list_agents(self, include_details: bool = False) -> dict[str, Any]:
-        """List all agents currently running. Not yet wired to MARSState."""
+        # TODO: Wire to live MARSState.agents dict — same as above.
         return {
             "error": "not_implemented",
             "message": "StatusService is not yet wired to live MARSState. Agent listing is pending."
         }
 
     async def _list_problems(self, severity: str | None = None) -> dict[str, Any]:
-        """List any problems or issues in the system. Not yet wired to MARSState."""
+        # TODO: Wire to live MARSState — collect errors from agent FSM states,
+        # unreachable services, and failed spawns.
         return {
             "error": "not_implemented",
             "message": "StatusService is not yet wired to live MARSState. Problem listing is pending."
