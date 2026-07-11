@@ -28,18 +28,25 @@ The previous multi-agent **runtime** code (`mars/cli`, `mars/server`, `mars/comm
 
 ## Roadmap
 
-### Next — model refinements
+The stable core (verbs, items, rooms, transports, in-session multi-avatar) is done — see **Status** above. Forward work, grouped by theme:
 
-- **Portable vs fixed items.** Today every item can be taken. Add a *fixed* kind that cannot be picked up (a sign on the wall, a statue). Rooms are inherently non-portable (you enter them, you don't carry them).
-- **`create` makes rooms too.** A "sea" is just a room you create and enter but can't pick up — unify room/item authoring under `create` with a kind, so a citizen can spawn a new context (room) as easily as a note.
-- **Ephemeral talk.** Spoken lines fade after a TTL (default ~60s) — talk is transient, items are the durable record. `listen` returns only recent lines; old ones pruned. (Confirm: only talk decays, not items.)
+### Next — model completeness
+- **Item kinds.** Today every item is portable. Add a *fixed* kind (a sign, a statue — can't be taken) and treat rooms as a *non-portable, enterable* kind. One `create` with a kind.
+- **`create` makes rooms.** A "sea" is a room you create and enter but can't pick up — unify room and item authoring under one verb.
+- **Ephemeral talk.** Spoken lines fade after a TTL (~60s); items stay durable. `listen` returns recent lines; old ones pruned. Talk is the transient layer; items are the record.
+- **Items as real-document handles.** An item can point to a real file/URL; `examine` follows the link (the citizen fetches the paper, the spec, the contract it stands for).
 
-### Then — multi-avatar (the cast comes alive)
+### Then — the cast (multi-agent collaboration)
+- **Example skills.** Ship `dm`, `coder`, `scientist` skills next to `mars-citizen`, so a new role is one copy away.
+- **Persistent residents.** A daemon / always-on mode so a DM or specialist stays in the world between sessions (today's subagents are ephemeral — they finish and leave).
+- **Cheap-router DM.** A DM avatar fields you on a free local model and escalates hard asks to a smarter avatar by talking to it — the human never picks models.
+- **Async by default.** Make "leave a question; a specialist answers when it passes through" a deliberate, obvious pattern (it already works via the transcript).
 
-Already proven: subagents within one opencode session share the server's live presence — a `wizard` and a `scholar` met an `explorer` in the lobby and held a Q&A. What remains:
-
-- **Persistent residents.** opencode `Task` subagents are ephemeral (they finish and leave). For an always-on **DM** or **specialists** you can drop in on, run separate connected agent instances against the same world (e.g. via the SSE network door) — then they're real citizens you converse with any time.
-- **Cheap-router DM.** A DM avatar fields you on a free local model and escalates hard asks to a smarter avatar by talking to it — so the human never picks models.
+### Later — scale & robustness
+- **Context curation.** Summarise/compact a busy room's transcript so it stays within a context window.
+- **Auth on the network door.** The SSE door is open today; add authentication for shared or public worlds.
+- **Presence persistence / resume.** Optionally persist who's where, so a restart doesn't reset presence.
+- **Observability.** An audit/log view of world events.
 
 ## Prior-art survey (does this already exist?)
 
@@ -57,6 +64,8 @@ Closest MCP matches: `gesslar/lpc-mud-bridge-mcp` (1★ — one sandboxed assist
 
 ## Open questions
 
-1. **Persistent residents** — how to keep a DM/specialist always-on (separate connected instances, or a daemon mode) so they're citizens you can drop in on.
-2. **Item kinds** — portable vs fixed vs room; how `create` expresses the kind.
-3. **Talk TTL** — default window for ephemeral talk, and whether anything besides talk decays.
+1. **Item kinds** — portable vs fixed vs room; how `create` expresses the kind.
+2. **Real-document handles** — does an item embed content, link out, or both; how `examine` resolves a link.
+3. **Persistent residents** — daemon mode vs separate connected instances for an always-on DM/specialist.
+4. **Talk TTL** — default window for ephemeral talk; does anything besides talk decay?
+5. **Auth model** — how to secure the network door for shared or public worlds.
