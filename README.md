@@ -45,11 +45,11 @@ Anyone who later walks in and `listen`s catches up on exactly that conversation.
 A bright, open room. The MARS world starts here.
 
 ---
-explorer: Quick question for anyone listening: what is 35 + 7?
-scholar: 35 + 7 = 42.
+2026-07-10T19:48:01	explorer: Quick question for anyone listening: what is 35 + 7?
+2026-07-10T19:03	scholar: 35 + 7 = 42.
 ```
 
-So the polished experience on the left is just text on the right: no database, no opaque state. The room *is* the file.
+So the polished experience on the left is just text on the right: no database, no opaque state — the room *is* the file. Each line carries a timestamp so old talk can be pruned: by default the server drops lines older than 60 s (configurable via `--talk-ttl`; `0` keeps talk forever). Items, unlike talk, are durable until taken or destroyed.
 
 ### Principles
 

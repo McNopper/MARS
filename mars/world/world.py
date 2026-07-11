@@ -9,18 +9,19 @@ Layout::
 
 A room is an abstract boundary — a place, a sea, a chest, or an abstract context
 like a task. The map is just the outermost room. A room file is a Markdown title,
-a description, a ``---`` line, then the running transcript — one line per utterance
-as ``<avatar>: <text>``.
+a description, a ``---`` line, then the running transcript. Each transcript line is
+``<iso8601>\\t<avatar>: <text>`` so old talk can be pruned by age; the timestamp is
+stripped for display.
 
-All file access is serialized by a single reentrant lock, so concurrent tool calls
-served by one process cannot interleave or corrupt world state. (The lock is
-in-process: run only **one** server per world directory — two processes sharing one
-``world/`` is not safe.)
+All file access is serialized by a single reentrant lock. At runtime the MCP server
+routes every verb through one worker thread (see ``WorldSession``), so the lock is
+uncontended and the worker also owns the prune tick — they can never race.
 """
 from __future__ import annotations
 
 import re
 import threading
+from datetime import datetime
 from pathlib import Path
 
 _SEPARATOR = "---"
@@ -93,6 +94,23 @@ class World:
                 return "\n".join(lines[:i]).strip(), "\n".join(lines[i + 1 :]).strip()
         return text.strip(), ""
 
+    def _write_room(self, room: str, description: str, transcript: str) -> None:
+        out = description.rstrip() + "\n\n" + _SEPARATOR + "\n"
+        if transcript.strip():
+            out += transcript.strip() + "\n"
+        self.room_path(room).write_text(out, encoding="utf-8")
+
+    @staticmethod
+    def _parse_line(line: str) -> tuple[datetime | None, str]:
+        """Split a transcript line into (timestamp, content); timestamp is None if absent/invalid."""
+        head, sep, content = line.partition("\t")
+        if sep:
+            try:
+                return datetime.fromisoformat(head), content
+            except ValueError:
+                pass
+        return None, line
+
     def look(self, room: str, present: list[str] | None = None) -> str:
         with self._lock:
             if not self.room_exists(room):
@@ -108,23 +126,55 @@ class World:
                 parts.append("Items: " + ", ".join(items))
             return "\n".join(parts)
 
-    def listen(self, room: str, lines: int = 20) -> str:
+    def listen(self, room: str, lines: int = 20, ttl_seconds: float | None = None) -> str:
         with self._lock:
             if not self.room_exists(room):
                 return f"There is no room called '{room}'."
             _, transcript = self._read_room(room)
             if not transcript:
                 return "(silence)"
-            return "\n".join(transcript.splitlines()[-lines:])
+            now = datetime.now()
+            contents: list[str] = []
+            for line in transcript.splitlines():
+                ts, content = self._parse_line(line)
+                if ttl_seconds is not None and ts is not None and (now - ts).total_seconds() > ttl_seconds:
+                    continue
+                contents.append(content)
+            if not contents:
+                return "(silence)"
+            return "\n".join(contents[-lines:])
 
     def say(self, room: str, avatar: str, text: str) -> str:
         with self._lock:
             if not self.room_exists(room):
                 raise FileNotFoundError(f"no room called {room!r}")
-            line = f"{avatar}: {text.strip()}\n"
+            spoken = f"{avatar}: {text.strip()}"
             with self.room_path(room).open("a", encoding="utf-8") as fh:
-                fh.write(line)
-            return line.rstrip("\n")
+                fh.write(f"{datetime.now().isoformat(timespec='seconds')}\t{spoken}\n")
+            return spoken
+
+    def prune_room(self, room: str, ttl_seconds: float) -> int:
+        """Remove transcript lines older than ttl_seconds. Lines without a timestamp are kept."""
+        with self._lock:
+            if not self.room_exists(room):
+                return 0
+            description, transcript = self._read_room(room)
+            now = datetime.now()
+            kept: list[str] = []
+            removed = 0
+            for line in transcript.splitlines():
+                ts, _ = self._parse_line(line)
+                if ts is not None and (now - ts).total_seconds() > ttl_seconds:
+                    removed += 1
+                else:
+                    kept.append(line)
+            if removed:
+                self._write_room(room, description, "\n".join(kept))
+            return removed
+
+    def prune_all(self, ttl_seconds: float) -> int:
+        with self._lock:
+            return sum(self.prune_room(r, ttl_seconds) for r in self.list_rooms())
 
     def _artifacts_dir(self, room: str) -> Path:
         return self.root / "artifacts" / room

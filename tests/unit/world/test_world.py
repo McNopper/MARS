@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,36 @@ class TestTranscript:
         transcript = world.listen("lobby")
         assert "you: hello world" in transcript
         assert "dm: welcome, traveler" in transcript
+
+    def test_say_is_timestamped_but_listen_strips_it(self, world: World) -> None:
+        world.say("lobby", "you", "marked")
+        raw = world.room_path("lobby").read_text(encoding="utf-8")
+        assert "\t" in raw                       # timestamp stored in the file
+        assert "you: marked" in world.listen("lobby")
+        assert "\t" not in world.listen("lobby")  # ...but stripped for display
+
+    def test_prune_keeps_fresh_lines(self, world: World) -> None:
+        world.say("lobby", "you", "fresh")
+        assert world.prune_room("lobby", ttl_seconds=60) == 0
+        assert "fresh" in world.listen("lobby")
+
+    def test_prune_removes_expired_lines(self, world: World) -> None:
+        world.create_room("cellar", "The Cellar", "damp")
+        old = (datetime.now() - timedelta(seconds=120)).isoformat(timespec="seconds")
+        world.room_path("cellar").write_text(
+            f"# The Cellar\n\ndamp\n\n---\n{old}\ta: stale\n", encoding="utf-8"
+        )
+        assert world.prune_room("cellar", ttl_seconds=60) == 1
+        assert world.listen("cellar") == "(silence)"
+
+    def test_listen_filters_by_ttl(self, world: World) -> None:
+        world.create_room("cellar", "The Cellar", "damp")
+        old = (datetime.now() - timedelta(seconds=120)).isoformat(timespec="seconds")
+        world.room_path("cellar").write_text(
+            f"# The Cellar\n\ndamp\n\n---\n{old}\ta: stale\n", encoding="utf-8"
+        )
+        assert "stale" not in world.listen("cellar", ttl_seconds=60)
+        assert "stale" in world.listen("cellar", ttl_seconds=None)
 
     def test_listen_respects_line_limit(self, world: World) -> None:
         for i in range(10):

@@ -10,10 +10,12 @@ from mars.world.server import WorldSession
 
 
 @pytest.fixture()
-def session(tmp_path: Path) -> WorldSession:
+def session(tmp_path: Path):
     w = World(tmp_path / "world")
     w.init()
-    return WorldSession(w)
+    s = WorldSession(w, talk_ttl=0)  # TTL off so transcript tests don't race the pruner
+    yield s
+    s.shutdown()
 
 
 class TestPresence:

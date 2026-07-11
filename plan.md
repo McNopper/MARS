@@ -16,8 +16,9 @@ A minimal, tested, **stable** world:
 - Items: create / examine / take / drop / destroy; taking is exclusive (file-grounded atomic move).
 - Rooms seeded (`lobby`, `library`); admin-authored via the engine / text files.
 - opencode wiring: `opencode.jsonc` (the `mars` MCP server) + `.opencode/skills/mars-citizen/SKILL.md`.
-- Tests: 48 unit + 2 end-to-end (stdio + SSE, drive the door as a real MCP client, marked `slow`).
-- Concurrency: all world file access is serialized by an in-process lock, so concurrent tool calls served by one process cannot interleave. (Caveat: the lock is in-process — run one server per world directory.)
+- Tests: 52 unit + 2 end-to-end (stdio + SSE, drive the door as a real MCP client, marked `slow`).
+- Concurrency: a **single-worker tick service** drains a command queue (~100 ms) and prunes expired talk (~1000 ms); all world access — including the prune — runs on that one thread, so it can never race. (The engine also keeps an in-process lock for direct/test use; run one server per world directory.)
+- Ephemeral talk: each utterance is timestamped; lines older than the TTL (default 60 s; `--talk-ttl`, `0` = off) are pruned. Items stay durable.
 
 The previous multi-agent **runtime** code (`mars/cli`, `mars/server`, `mars/common`) has been removed. MARS is now just the world.
 
@@ -35,7 +36,6 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 - **Item kinds.** Today every item is portable. Add a *fixed* kind (a sign, a statue — can't be taken) and treat rooms as a *non-portable, enterable* kind. One `create` with a kind.
 - **Modify items in place.** Today an item can only be created or destroyed — changing its text means destroy + recreate (what you hit when appending to a note). Add `append`/`write` so notes and whiteboards accumulate content over time.
 - **`create` makes rooms.** A "sea" is a room you create and enter but can't pick up — unify room and item authoring under one verb.
-- **Ephemeral talk.** Spoken lines fade after a TTL (~60s); items stay durable. Mechanism: the server runs a **1-second loop** that timestamps each utterance and prunes lines older than the TTL — fading is **code-driven, not agent-driven**. `listen` returns what's left. Talk is the transient layer; items are the record. (Implementation notes: timestamp stored inline in each transcript line; the prune loop rewrites the room file; guard transcript mutations with a lock since the loop runs concurrently with `say`.)
 - **Items as real-document handles.** An item can point to a real file/URL; `examine` follows the link (the citizen fetches the paper, the spec, the contract it stands for).
 
 ### Then — the cast (multi-agent collaboration)
@@ -70,5 +70,4 @@ Closest MCP matches: `gesslar/lpc-mud-bridge-mcp` (1★ — one sandboxed assist
 1. **Item kinds** — portable vs fixed vs room; how `create` expresses the kind.
 2. **Real-document handles** — does an item embed content, link out, or both; how `examine` resolves a link.
 3. **Persistent residents** — daemon mode vs separate connected instances for an always-on DM/specialist.
-4. **Talk TTL** — default window for ephemeral talk; does anything besides talk decay?
-5. **Auth model** — how to secure the network door for shared or public worlds.
+4. **Auth model** — how to secure the network door for shared or public worlds.
