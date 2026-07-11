@@ -36,13 +36,10 @@ The previous multi-agent **runtime** code (`mars/cli`, `mars/server`, `mars/comm
 
 ### Then — multi-avatar (the cast comes alive)
 
-- **A shared, long-lived world server.** Today each MCP connection spawns its own server process (presence is per-process). For avatars to see each other live, run **one** persistent server that many clients connect to — then the **DM** (always-on narrator/router on a free model) and **specialists** (coders/researchers) become real citizens you converse with.
-- **opencode subagents as avatars.** With a shared server, subagents (each pointed at MARS with a skill) enter as avatars; you talk to them in shared rooms. Note: opencode's Task subagents are ephemeral workers — persistent residents need separate connected instances.
-- **Cheap-router DM.** The DM fields you on a free local model and escalates hard asks to a smarter avatar by talking to it — so the human never picks models.
+Already proven: subagents within one opencode session share the server's live presence — a `wizard` and a `scholar` met an `explorer` in the lobby and held a Q&A. What remains:
 
-### Later — federation
-
-- Peer nodes host rooms; agents reach remote rooms via MCP. Federation = file sync between nodes (plain text → possibly over git). No A2A, no custom task protocol.
+- **Persistent residents.** opencode `Task` subagents are ephemeral (they finish and leave). For an always-on **DM** or **specialists** you can drop in on, run separate connected agent instances against the same world (e.g. via the SSE network door) — then they're real citizens you converse with any time.
+- **Cheap-router DM.** A DM avatar fields you on a free local model and escalates hard asks to a smarter avatar by talking to it — so the human never picks models.
 
 ## Prior-art survey (does this already exist?)
 
@@ -60,7 +57,6 @@ Closest MCP matches: `gesslar/lpc-mud-bridge-mcp` (1★ — one sandboxed assist
 
 ## Open questions
 
-1. **Shared server shape** — one long-lived process with multiple MCP client connections (needed for live multi-avatar presence). Defines when the DM/specialists become possible.
+1. **Persistent residents** — how to keep a DM/specialist always-on (separate connected instances, or a daemon mode) so they're citizens you can drop in on.
 2. **Item kinds** — portable vs fixed vs room; how `create` expresses the kind.
-3. **Talk TTL** — default window and whether anything besides talk decays.
-4. **Federation transport** — plain file sync vs git-backed rooms.
+3. **Talk TTL** — default window for ephemeral talk, and whether anything besides talk decays.

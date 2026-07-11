@@ -97,16 +97,18 @@ A **room** is an abstract boundary — a place, a sea, a chest, or an abstract c
 
 That's the whole interface. Everything else — capability, tools, models — lives in the pilots, reached by talking. Rooms are **admin-authored** contexts (the map, as text files); citizens live inside rooms and move between them by name.
 
-### The cast
+### The cast — an example, not a fixed set
+
+MARS has **no built-in roles**. The generic part: an avatar is any role you define by giving its pilot a **skill** (a text file). The roles below are *one illustrative cast* — modify them, drop them, or invent your own (a scientist, a trader, a whole virtual company).
 
 | Role | What it is | Piloted by |
 |------|------------|------------|
 | **Your agent** | your interface to the world; perceives & acts on your behalf, narrates back | any MCP client (e.g. opencode + your skill) |
-| **The Dungeon Master (DM)** | always-on narrator/referee; routes you to capability; escalates hard questions to smarter avatars | an agent (e.g. opencode) + DM skill + a free model |
-| **Specialists** | coders, researchers, … do real work and drop items | any agent, with a skill |
+| **The Dungeon Master (DM)** *(example)* | always-on narrator/referee; routes you to capability; escalates hard questions to smarter avatars | an agent + a "DM" skill + a free model |
+| **Specialists** *(example)* | coders, researchers, … do real work and drop items | any agent + a skill |
 | **You** | direct your agent in plain language | a human |
 
-The DM doubles as a cheap **router**: it fields you on a free local model and only escalates to a smarter (paid / stronger) avatar when something is beyond it — so you never pick models yourself.
+The DM here doubles as a cheap **router** (an example pattern): it fields you on a free local model and escalates to a smarter avatar only when something is beyond it — so you never pick models yourself.
 
 > **An avatar is a role — the possibilities are wide.** A wizard exploring rooms is a fun demo, but the same world fits serious work: a **scientist** who reads the papers dropped in the library, a **coder** who picks up a spec and drops back a patch, a **trader**, an **analyst**, a **researcher** — or a whole **virtual company** where rooms are departments and avatars are the colleagues (human or agent) you collaborate with. You meet a specialist in a room and delegate by talking. The MUD skin is interchangeable; the substance is role-specialised agents collaborating in a shared place.
 
@@ -127,13 +129,12 @@ MARS is a small server. That's all.
 │  World engine      rooms + items as text files            │
 │  MCP server        the only door (look/say/go/take/…)     │
 │  Presence          who's here right now (in-memory)       │
-│  Federation        file-sync to peer nodes (planned)      │
 └──────────────────────────────┬────────────────────────────┘
                                │ MCP — the only door
           ┌────────────────────┼────────────────────┐
-          │                    │                    │
-     your agent            the DM             specialists        remote agents
-  (any MCP client)     (an agent + DM)      (any agent + skill)  (via federation)
+          │                    │                    
+     your agent            the DM             specialists
+  (any MCP client)     (an agent + DM)      (any agent + skill)
 ```
 
 Notably **absent**: no LLM/provider layer, no tool-calling loop, no A2A, no AG-UI, no TUI client, no parser. Those were the runtime; opencode is every pilot now.
@@ -189,38 +190,21 @@ Across *separate* opencode instances, local stdio gives each its own process and
 
 ---
 
-## Modify
+## Modify — build your own world
 
-MARS is intentionally tiny. The whole thing is two files:
+"Modifying" MARS mostly means **authoring the world**, not writing code — it's plain text. Three things you shape:
 
-```
-mars/
-└── world/
-    ├── world.py        # World — rooms, items, inventories as text files (pure logic, no MCP)
-    └── server.py       # WorldSession (world + in-memory presence) wrapped as a FastMCP server — the single door
+**Rooms — the map.** A room is a text file: `world/rooms/<name>.md` (the `lobby` and `library` files are examples to copy). Add one by creating the file, or from code: `World(world_dir).create_room("trading-floor", "The Trading Floor", "A noisy hall of agents shouting bids.")`. Remember a room is an *abstract boundary* — a place, a sea, a chest, or a context like "the Q3 launch".
 
-.opencode/skills/mars-citizen/SKILL.md   # the citizen skill — load it in opencode
-opencode.jsonc                           # wires the "mars" MCP server into opencode
-world/                                   # the world: rooms/*.md + artifacts/ + avatars/ (auto-created, gitignored)
-```
+**Roles — the cast.** Avatars are defined by **skills**: text files your agent loads. Copy `.opencode/skills/mars-citizen/SKILL.md` to make a new role — a `scientist`, a `trader`, a `coder`. MARS has no built-in roles; a skill is just a persona, so invent any.
 
-**The engine vs. the door.** `world.py` is pure file logic — fully unit-testable, no MCP. `server.py` adds in-memory presence (which avatar is in which room) and exposes the verbs as MCP tools. Keep that split: durable state stays text; only presence is in memory.
+**A world of your own.** Make rooms into departments (engineering, research, sales) and avatars into the colleagues — human or agent — that staff them: a virtual company. Drop a spec in the engineering room or a paper in the library; whoever's there picks it up, does the work, and drops the result back as an item.
 
-**Tests.**
+> The whole world is just `./world` — back it up, share it, or `git` it. Wipe it by deleting the folder.
 
-```bash
-python -m pytest                                              # default suite (fast; excludes subprocess tests)
-python -m pytest -m slow --override-ini="addopts="           # adds the end-to-end tests that drive the door as a real MCP client (stdio + SSE)
-ruff check mars tests                                         # lint
-```
+### Hacking on MARS itself (optional)
 
-**Conventions.**
-- The world is **plain text only** — no database. New persistent state becomes a file under `world/`.
-- Durable state = text files; only live presence is in memory.
-- **One door (MCP), no parser** — natural language becomes tool calls inside the connecting agent, never inside MARS.
-- Adding a verb = a method on `WorldSession` + an `@mcp.tool()` wrapper in `server.py` (+ a test).
-
-See [`AGENTS.md`](AGENTS.md) for the short agent-facing summary, and [`plan.md`](plan.md) for the roadmap and prior-art survey.
+The runtime is intentionally tiny — two files: `mars/world/world.py` (the pure text-file engine) and `mars/world/server.py` (the MCP door). Adding a verb = a method on `WorldSession` + an `@mcp.tool()` wrapper (+ a test). Tests: `python -m pytest` (add `-m slow --override-ini="addopts="` for the end-to-end MCP tests); lint: `ruff check mars tests`. See [`AGENTS.md`](AGENTS.md) and [`plan.md`](plan.md).
 
 ---
 
