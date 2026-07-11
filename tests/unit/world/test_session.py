@@ -118,9 +118,9 @@ class TestAuthoring:
         assert "Wet paint" in session.examine("you", "sign.txt")  # but examinable
         assert "Destroyed" in session.destroy("you", "sign.txt")
 
-    def test_append_grows_an_item(self, session: WorldSession) -> None:
+    def test_modify_grows_an_item(self, session: WorldSession) -> None:
         session.create("you", "board.md", "line one")
-        assert "Appended" in session.append("you", "board.md", "line two")
+        assert "Modified" in session.modify("you", "board.md", "line two")
         content = session.examine("you", "board.md")
         assert "line one" in content and "line two" in content
 

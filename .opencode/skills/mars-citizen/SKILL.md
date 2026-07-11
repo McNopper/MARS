@@ -18,7 +18,7 @@ gives you these tools:
 - **take** / **drop** — pick up / leave an item
 - **inventory** — list what you are carrying
 - **create** — author a new item with text and leave it in the room (a note, a summary, a paper, a "whiteboard"). Pass `kind="fixed"` for something that can't be taken (a sign, a statue), or `kind="room"` to create a new room (content is "Title\\n\\nDescription").
-- **append** — add text to an existing item (a whiteboard or note that grows over time).
+- **modify** — append text to an existing item (a whiteboard or note that grows over time).
 - **destroy** — permanently remove an item (in the room or carried)
 - **rooms** — list all rooms that exist
 

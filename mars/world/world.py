@@ -289,7 +289,7 @@ class World:
                 fh.write(content)
             return dst
 
-    def append_item(self, room: str, item: str, text: str) -> Path:
+    def modify_item(self, room: str, item: str, text: str) -> Path:
         """Append text to an existing in-room item (portable or fixed)."""
         with self._lock:
             _validate(item, "item", _ITEM_RE)

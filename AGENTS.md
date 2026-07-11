@@ -8,7 +8,7 @@ vision and [`plan.md`](plan.md) for the roadmap.
 
 The MARS world is wired up as a local MCP server (`opencode.jsonc` → `mars`). Its entire
 surface is a small set of verbs: `look`, `listen`, `say`, `go`, `examine`, `take`,
-`drop`, `inventory`, `create`, `append`, `destroy`, `rooms`.
+`drop`, `inventory`, `create`, `modify`, `destroy`, `rooms`.
 
 To explore the world as a citizen, load the **`mars-citizen`** skill, then ask to look
 around. The world is a directory of text files under `world/` (auto-created on first run).

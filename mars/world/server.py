@@ -186,14 +186,14 @@ class WorldSession:
             return f"Created: {name} ({kind}) — left here in {room}."
         return self._submit(op)
 
-    def append(self, avatar: str, item: str, text: str) -> str:
+    def modify(self, avatar: str, item: str, text: str) -> str:
         def op() -> str:
             room = self._room_of(avatar)
             try:
-                self.world.append_item(room, item, text)
+                self.world.modify_item(room, item, text)
             except (FileNotFoundError, ValueError) as exc:
-                return f"Could not append to {item!r}: {exc}"
-            return f"Appended to: {item}."
+                return f"Could not modify {item!r}: {exc}"
+            return f"Modified: {item}."
         return self._submit(op)
 
     def destroy(self, avatar: str, item: str) -> str:
@@ -282,9 +282,9 @@ def create(avatar: str, name: str, content: str, kind: str = "item") -> str:
 
 
 @mcp.tool()
-def append(avatar: str, item: str, text: str) -> str:
+def modify(avatar: str, item: str, text: str) -> str:
     """Append text to an existing item in the room (a note or whiteboard that grows over time)."""
-    return _session().append(avatar, item, text)
+    return _session().modify(avatar, item, text)
 
 
 @mcp.tool()

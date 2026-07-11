@@ -12,8 +12,8 @@ A minimal, tested, **stable** world:
 
 - `mars/world/world.py` — `World`: rooms + artifacts + inventories as plain text files (pure logic).
 - `mars/world/server.py` — `WorldSession` (world + in-memory presence) wrapped as a FastMCP server. The single door.
-- Verbs live: `look · listen · say · go · examine · take · drop · inventory · create · append · destroy · rooms`.
-- Items: create (with `kind`: item/fixed/room) / examine / take / drop / append / destroy; taking is exclusive; fixed items can't be taken; `append` grows a note in place. An item's content may be a URL/path the citizen fetches (a real-document handle).
+- Verbs live: `look · listen · say · go · examine · take · drop · inventory · create · modify · destroy · rooms`.
+- Items: create (with `kind`: item/fixed/room) / examine / take / drop / modify / destroy; taking is exclusive; fixed items can't be taken; `modify` grows a note in place. An item's content may be a URL/path the citizen fetches (a real-document handle).
 - Rooms seeded (`lobby`, `library`); admin-authored via the engine / text files.
 - opencode wiring: `opencode.jsonc` (the `mars` MCP server) + `.opencode/skills/mars-citizen/SKILL.md`.
 - Tests: 52 unit + 2 end-to-end (stdio + SSE, drive the door as a real MCP client, marked `slow`).
@@ -35,14 +35,14 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 ### Next — model completeness
 *(Done — item kinds, modify-in-place, create-makes-rooms, and real-document handles all shipped. Kept here as a record.)*
 - ~~**Item kinds.**~~ Portable (default), *fixed* (can't be taken), and *room* (non-portable, enterable) via `create(kind=...)`.
-- ~~**Modify items in place.**~~ `append` grows a note/whiteboard in place.
+- ~~**Modify items in place.**~~ `modify` grows a note/whiteboard in place.
 - ~~**`create` makes rooms.**~~ `create(kind="room")` unifies room + item authoring.
 - ~~**Items as real-document handles.**~~ An item's content may be a URL/path; the citizen fetches it on `examine` (MARS stays dumb).
 
 ### Then — the cast (multi-agent collaboration)
 - **Example skills.** Ship `dm`, `coder`, `scientist` skills next to `mars-citizen`, so a new role is one copy away.
-- **Persistent residents.** A daemon / always-on mode so a DM or specialist stays in the world between sessions (today's subagents are ephemeral — they finish and leave).
-- **Cheap-router DM.** A DM avatar fields you on a free local model and escalates hard asks to a smarter avatar by talking to it — the human never picks models.
+- **Persistent residents.** A daemon / always-on mode so a Dungeon Master or specialist stays in the world between sessions (today's subagents are ephemeral — they finish and leave).
+- **Cheap-router Dungeon Master.** The Dungeon Master avatar fields you on a free local model and escalates hard asks to a smarter avatar by talking to it — the human never picks models.
 - **Async by default.** Make "leave a question; a specialist answers when it passes through" a deliberate, obvious pattern (it already works via the transcript).
 
 ### Later — scale & robustness
@@ -68,5 +68,5 @@ Closest MCP matches: `gesslar/lpc-mud-bridge-mcp` (1★ — one sandboxed assist
 
 ## Open questions
 
-1. **Persistent residents** — daemon mode vs separate connected instances for an always-on DM/specialist.
+1. **Persistent residents** — daemon mode vs separate connected instances for an always-on Dungeon Master/specialist.
 2. **Auth model** — how to secure the network door for shared or public worlds.
