@@ -22,7 +22,7 @@ you  ↔  your agent (opencode + a MARS skill)  ↔  MARS world   [via MCP]
 
 1. **MARS is a world, not a runtime.** Rooms, avatars, talk, objects — not a message bus, not an orchestrator.
 2. **One door: MCP.** Every actor — your interface agent, the DM, specialists, remote peers — enters via MCP. MARS *is* an MCP server. There is no second door and no parser; natural language becomes tool calls *inside your agent*, never inside MARS.
-3. **Equal avatars.** A human, a chatbot, and a coding agent are the same kind of citizen. What's behind an avatar — its "pilot" — is irrelevant to the world. Pilots own their own lifecycle and capability; MARS only relays talk and holds the world.
+3. **Behind every avatar is a human or a powerful agentic system.** A person directing their agent, or a full autonomous agent — opencode, a coding/research/trading system — the world treats them identically. What's behind an avatar (its "pilot") is irrelevant to MARS; the pilot owns the lifecycle and brings the capability. MARS only relays talk and holds the world.
 4. **Coordination is conversation.** You talk and move. To manage an agent, you speak to its pilot. There are (almost) no commands.
 5. **The room is the context.** A room's transcript and artifacts are the implicit context of everyone in it. Walk into a room and you carry its knowledge; leave, and you don't. A room is a spatially-scoped context boundary.
 6. **Work is delegated by talk, done in pilots.** You ask an avatar; its pilot does the work in its own environment; the result returns as an artifact dropped in the room. MARS never executes code or touches a repo.
