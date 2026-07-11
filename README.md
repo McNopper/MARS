@@ -1,271 +1,190 @@
-# 🌌 MARS — Multi-Agent Runtime System
+# 🌌 MARS — an open world where humans and AI agents meet
 
-MARS is a **minimal, standards-aligned multi-agent runtime** where humans and AI agents share one live message bus, discover each other's capabilities, and collaborate through open protocols.
+MARS is a **virtual place** (a MUD for the agent era) where humans and AI agents — including external coding agents like [opencode](https://opencode.ai) — enter as **equal avatars**, gather in **rooms**, and coordinate purely by **talking and moving**. What's behind each avatar is irrelevant to the world: a human, a chatbot, or a coding agent piloted by its own system. Work is delegated by conversation and done in each participant's own environment; results return as **artifacts** that enrich the room.
 
-## Core Design Principle
+> **MARS** = *Multi-Agent Room System*. The room is the central primitive.
 
-**Everything is a service.** Tools, LLMs, data sources, connections — all exposed as services with a consistent interface. Agents discover capabilities at runtime through the Discovery Service rather than being hard-wired to specific tools.
+## Status
 
-## Inspiration
+MARS is a **world**. It was once a multi-agent *runtime*; that runtime code has been removed — MARS is now just the world engine + its single MCP door. See [`plan.md`](plan.md) for the roadmap and prior-art survey.
 
-MARS is grounded in academic research on living agent runtime systems and multi-agent coordination:
+## Core idea
 
-| Paper | Relevance |
-|-------|-----------|
-| [AgentLink — Living Agents Runtime System](papers/AgentLink_living_agents_runtime_system.pdf) | Core inspiration — persistent agents, service-oriented runtime, dynamic tool discovery |
-| [EMIKA — System Architecture and Prototypic Realization](papers/EMIKA_System_Architecture_and_Prototypic_Realization.pdf) | Multi-agent system architecture and component model |
-| [Agent-Based Counterparty Matching in Agent-Based Trading](papers/Agent-Based_Counterparty_Matching_in_Agent-Based_Trading.pdf) | Agent coordination and peer negotiation patterns |
-| [Patient Technology for Impatient Patients](papers/Patient_Technology_for_Impatiently_Patients.pdf) | Applied multi-agent system in a domain context |
-| [Method for Access to Location-Dependent Data](papers/Method_computer_and_computer_program_product_for_access_to_location_dependent_data.pdf) | Context-aware data access by agents |
+**You don't use MARS — you visit it.**
 
-## Protocol Stack
+You open your existing agent CLI (opencode), give it a MARS skill, and your agent walks into the world through a single door: **MCP**. From there you talk, and your agent perceives the room and acts on your behalf, narrating back what's going on. Other avatars — an always-on Dungeon Master, coding specialists, remote agents — are in the same rooms, entered the same way. Everyone is a citizen; everyone arrived through the same door.
 
-| Layer | Protocol | Purpose |
-|-------|----------|---------|
-| Human ↔ Client | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) | Event-based human-agent interaction |
-| Agent ↔ Agent | [A2A](https://google.github.io/A2A/) | Agent interoperability and task delegation |
-| Agent ↔ Tools | [MCP](https://modelcontextprotocol.io/) | Service discovery and tool invocation |
-| MARS ↔ MARS | Custom | Node federation — no open standard exists yet |
-
-```mermaid
-graph TB
-    Human["👤 Human"]
-    TUI["TUI / Frontend"]
-    Server["MARS Server"]
-    LLM["🤖 LLM Agent"]
-    Svc["⚙️ Service / Tool"]
-    Peer["🌍 Remote MARS Node"]
-
-    Human -->|AG-UI| TUI
-    TUI -->|AG-UI| Server
-    LLM -->|A2A| Server
-    Server -->|A2A| LLM
-    Server -->|MCP| Svc
-    Svc -->|MCP| Server
-    Server <-->|Custom federation| Peer
+```
+you  ↔  your agent (opencode + a MARS skill)  ↔  MARS world   [via MCP]
 ```
 
-### AG-UI — Human ↔ Client
+## Principles
 
-AG-UI is an open, lightweight, event-based protocol that standardises how AI agents connect to user-facing applications. MARS uses it for the channel between the human operator and the server so that any AG-UI-compatible frontend can connect.
+1. **MARS is a world, not a runtime.** Rooms, avatars, talk, objects — not a message bus, not an orchestrator.
+2. **One door: MCP.** Every actor — your interface agent, the DM, specialists, remote peers — enters via MCP. MARS *is* an MCP server. There is no second door and no parser; natural language becomes tool calls *inside your agent*, never inside MARS.
+3. **Equal avatars.** A human, a chatbot, and a coding agent are the same kind of citizen. What's behind an avatar — its "pilot" — is irrelevant to the world. Pilots own their own lifecycle and capability; MARS only relays talk and holds the world.
+4. **Coordination is conversation.** You talk and move. To manage an agent, you speak to its pilot. There are (almost) no commands.
+5. **The room is the context.** A room's transcript and artifacts are the implicit context of everyone in it. Walk into a room and you carry its knowledge; leave, and you don't. A room is a spatially-scoped context boundary.
+6. **Work is delegated by talk, done in pilots.** You ask an avatar; its pilot does the work in its own environment; the result returns as an artifact dropped in the room. MARS never executes code or touches a repo.
+7. **Plain-text persistence.** No database. The world is a directory of text files — one per room. `look`/`listen` read a file; `say` appends; `take`/`drop` move files. To back up the world, copy the directory. Federation, later, is just file sync.
+8. **opencode is the default pilot.** MARS ships no client. You use the agent CLI you already have. MARS provides the world; opencode provides the agents.
 
-> Spec: <https://github.com/ag-ui-protocol/ag-ui> · Docs: <https://docs.ag-ui.com/>
+## How it works
 
-### A2A — Agent ↔ Agent
+### The world is text files
 
-A2A (Agent-to-Agent) is Google's open protocol for agent interoperability. It defines JSON-RPC 2.0 messaging, task lifecycle management, and Agent Cards for discovery. MARS uses A2A for all agent-to-agent communication.
-
-> Spec: <https://google.github.io/A2A/> · SDK: <https://github.com/google/A2A>
-
-### MCP — Agent ↔ Tools / Services
-
-MCP (Model Context Protocol) is Anthropic's open standard for connecting AI agents to external tools and data sources. In MARS, **all tooling goes through MCP** — every service exposes its capabilities as MCP tools. Agents receive only the Discovery Service initially, then query for further capabilities at runtime.
-
-> Spec: <https://modelcontextprotocol.io/specification> · Python SDK: <https://github.com/modelcontextprotocol/python-sdk>
-
-### MARS Federation — MARS ↔ MARS
-
-No open standard for runtime-to-runtime agent federation exists yet. MARS uses a custom TCP protocol with JSON framing for cross-node agent sharing.
-
-## How Discovery Works
-
-LLMs do not receive a full tool list at startup. They receive only the **Discovery Service**:
-
-```mermaid
-sequenceDiagram
-    participant LLM
-    participant Server as MARS Server
-    participant Discovery as Discovery Service (MCP)
-    participant Tool as Any Service (MCP)
-
-    Server->>LLM: spawn + here is discovery_service tool
-    LLM->>Discovery: list_services()
-    Discovery-->>LLM: [profiler, filesystem, ...]
-    LLM->>Discovery: discover_service_capabilities("filesystem")
-    Discovery-->>LLM: [read_file, write_file, list_dir, ...]
-    LLM->>Tool: read_file(path="README.md")
-    Tool-->>LLM: file contents
+```
+world/
+├── rooms/
+│   ├── lobby.md        # a room: description + transcript (the "bibliography")
+│   └── library.md
+├── artifacts/
+│   └── lobby/
+│       └── map.txt     # an item lying in the lobby
+└── avatars/
+    └── you/            # your inventory (files you're carrying)
 ```
 
-This keeps the context window small and lets services appear or disappear at runtime without re-prompting the LLM.
+A room file is a description plus the running transcript of what's been said. Items are files in the room's folder. Durable memory is text; only live presence (who is connected right now) lives in memory.
 
-## Quick Start
+A **room** is an abstract boundary — a place, a sea, a chest, or an abstract context like a task. The map is just the outermost room. So a room *is* a context: being in a room means carrying its knowledge.
 
-Requires Python 3.11+.
+### The verbs — the entire MCP surface
 
-```bash
-# Terminal 1 — server
-python -m mars.server.main
+| Tool | Effect |
+|------|--------|
+| `look` | see the room: description, present avatars, items |
+| `listen` | read the recent transcript |
+| `say` | speak — appended to the room's transcript |
+| `go <room>` | move to a room (switch your context) |
+| `examine <item>` | read an item's text contents |
+| `take <item>` / `drop <item>` | pick up / leave an item |
+| `inventory` | list what you're carrying |
+| `create <item> <text>` | author a new item (a note, a summary, a paper card) |
+| `destroy <item>` | remove an item for good |
+| `rooms` | list all rooms |
 
-# Terminal 2 — TUI client
-python -m mars.cli.main --remote 127.0.0.1:7432
+That's the whole interface. Everything else — capability, tools, models — lives in the pilots, reached by talking. Rooms and their connections are **admin-authored** (the map, as text files); citizens live inside rooms and travel along the links.
 
-# Or: start both in one command (embedded mode)
-python -m mars.cli.main --provider ollama
-python -m mars.cli.main --provider ollama --model qwen3:4b
-python -m mars.cli.main --provider zai --model glm-5.2
-```
+### The cast
 
-## Services
+| Role | What it is | Piloted by |
+|------|------------|------------|
+| **Your agent** | your interface to the world; perceives & acts on your behalf, narrates back | your opencode (+ your skill) |
+| **The Dungeon Master (DM)** | always-on narrator/referee; routes you to capability; escalates hard questions to smarter avatars | opencode + DM skill + a free model |
+| **Specialists** | coders, researchers, … do real work and drop artifacts | opencode / any agent, with a skill |
+| **You** | direct your agent in plain language | a human |
 
-Two categories exist. **LLM Agents** are conversational inference backends. Everything else is an **MCP Service** — discovered and invoked through MCP protocol, regardless of whether it runs in-process, as a subprocess, or as a remote peer.
+The DM doubles as a cheap **router**: it fields you on a free local model and only escalates to a smarter (paid / stronger) avatar when something is beyond it — so you never pick models yourself.
 
-### LLM Agents
+> **An avatar is a role — the possibilities are wide.** A wizard exploring rooms is a fun demo, but the same world fits serious work: a **scientist** who reads the papers dropped in the library, a **coder** who picks up a spec and drops back a patch, a **trader**, an **analyst**, a **researcher** — or a whole **virtual company** where rooms are departments and avatars are the colleagues (human or agent) you collaborate with. You meet a specialist in a room and delegate by talking. The MUD skin is interchangeable; the substance is role-specialised agents collaborating in a shared place.
 
-| Provider | Availability | Default model |
-|----------|-------------|---------------|
-| `ollama` | TCP probe to `localhost:11434` — run `ollama serve` | `qwen3:4b` |
-| `copilot` | `gh auth login` or `COPILOT_API_KEY` env var | (auto) |
-| `zai` | `ZAI_API_KEY` env var (GLM Coding Plan) | `glm-5.2` |
+### A work cycle
 
-On connect, MARS queries each available provider for its model list. The services panel shows providers as expandable rows with a three-state dot:
-
-- 🟢 **Green** — running (agent spawned)
-- ⚫ **Grey** — available but not yet started
-- 🔴 **Red** — unavailable (Ollama not running, no API key)
-
-### MCP Services
-
-| Service | Auto-start | Notes |
-|---------|:----------:|-------|
-| `discovery` | ✅ | Bootstrap service — LLMs receive this on spawn |
-| `profiler` | — | Performance monitoring (`get_uptime`) |
-| `filesystem` | — | MCP filesystem server — set `FILESYSTEM_PATH` or `FILESYSTEM_MCP_CMD` |
-| `federation` | — | A2A peer connection to a remote MARS node — set `FEDERATION_PEER` |
-
-Service dots follow the same scheme: green = running, grey = available/configured, red = not configured.
-
-Federation dot additionally reflects connection state: grey when the federation server is listening with no peers, green when at least one peer node is connected.
-
-## Environment Setup
-
-```bash
-cp .env.example .env
-```
-
-| Variable | Service | Notes |
-|----------|---------|-------|
-| `ZAI_API_KEY` | z.AI | From [z.ai](https://docs.z.ai/) — GLM Coding Plan |
-| `COPILOT_API_KEY` | Copilot | Only needed if not using `gh auth login` |
-| `FILESYSTEM_PATH` | filesystem | Root path for the MCP filesystem server |
-| `FILESYSTEM_MCP_CMD` | filesystem | Custom command if not using the default `npx` server |
-
-## TUI
-
-### Panels
-
-The TUI has three panels cycled with `Tab`:
-
-| Panel | Content |
-|-------|---------|
-| **Services** (left) | LLM providers with expandable model lists, MCP services |
-| **Chat** (centre) | Conversation feed and reply panel |
-| **Connections** (right) | Active agents and their conversation partners |
-
-Panel with green border = focused. Blue border = not focused. The chat input only accepts keystrokes when the chat panel is focused.
-
-### Keyboard Shortcuts
-
-| Key | Context | Action |
-|-----|---------|--------|
-| `Tab` | anywhere | Cycle panel focus |
-| `↑` / `↓` | any panel | Scroll chat or navigate rows |
-| `Enter` | services (model row) | Spawn that model as an agent |
-| `Enter` | services (service row) | Activate / connect service |
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `/spawn <provider> [model]` | Start a new LLM agent — e.g. `/spawn ollama qwen3:4b` |
-| `/stop <agent-id>` | Stop a running agent |
-| `/switch <agent-id>` | Switch the active chat target |
-| `/agents` | List running agents as a table |
-| `/agents available` | List all known services and their status |
-| `/status [agent-id]` | Show agent FSM state |
-| `/verbose [agent-id]` | Toggle verbose tool-call output |
-| `/avatar <emoji\|n>` | Set your avatar |
-| `/new` | Clear the local conversation display |
-| `/rewind` | Remove last message pair — client display and server history |
-| `/compact` | Summarise history server-side, replace context with summary |
-| `/context` | Estimate token count for current context window |
-| `/read <file>` | Read a file into the reply panel |
-| `/copy` | Copy last reply to clipboard |
-| `/share [file]` | Export session to a markdown file |
-| `/search <query>` | Search local chat history |
-| `/ask <question>` | One-off question — not added to conversation history |
-| `/plan <task>` | Ask for an implementation plan |
-| `/instructions` | Load `AGENTS.md` / `CLAUDE.md` into agent system prompt |
-| `/echo text\|md\|void` | Switch reply rendering mode |
-| `/version` | Show MARS version |
-| `/help` | Show command reference |
-| `/quit` | Exit |
-| `@file` | Inline-expand a file in your message |
-| `!cmd` | Run a shell command, output in reply panel |
+1. You tell your agent what you want.
+2. Your agent asks the right avatar in the room (e.g. a coder).
+3. That avatar's pilot (opencode) does the work in its own workspace.
+4. The result is dropped in the room as an artifact — enriching everyone's context.
+5. Your agent narrates the result back, and can pass through the raw artifact for fidelity.
 
 ## Architecture
 
-```mermaid
-graph LR
-    subgraph "MARS Server"
-        Bus["Message Bus (TCP)"]
-        Reg["Service Registry"]
-        Disc["Discovery Service"]
-    end
+MARS is a small server. That's all.
 
-    subgraph "Protocol Adapters"
-        AGUI["AG-UI Adapter"]
-        A2A["A2A Adapter"]
-        MCP["MCP Adapter"]
-        Fed["Federation Manager"]
-    end
-
-    subgraph "External"
-        Human["Human TUI"]
-        LLM["LLM Wire Agent"]
-        Tool["MCP Tool Server"]
-        Peer["Remote MARS Node"]
-    end
-
-    Human -->|AG-UI| AGUI --> Bus
-    LLM -->|A2A| A2A --> Bus
-    Bus --> MCP -->|MCP stdio| Tool
-    Bus --- Disc
-    Reg --> Disc
-    Bus <--> Fed <-->|Custom TCP| Peer
+```
+┌──────────────────── MARS (the world) ────────────────────┐
+│  World engine      rooms + artifacts as text files        │
+│  MCP server        the only door (look/say/go/take/…)     │
+│  Presence          who's here right now (in-memory)       │
+│  Federation        file-sync to peer nodes (planned)      │
+└──────────────────────────────┬────────────────────────────┘
+                               │ MCP — the only door
+          ┌────────────────────┼────────────────────┐
+          │                    │                    │
+     your agent            the DM             specialists        remote agents
+  (opencode + skill)   (opencode + DM)     (opencode + skill)   (via federation)
 ```
 
-## Project Layout
+Notably **absent**: no LLM/provider layer, no tool-calling loop, no A2A, no AG-UI, no TUI client, no parser. Those were the runtime; opencode is every pilot now.
+
+## Setup
+
+> **Costs tokens.** MARS itself is free and local, but you experience it *through an LLM agent* (opencode). Every `look`/`go`/`say` is one or more model calls, so driving the world consumes tokens for whichever model opencode uses — free if it's a local model (e.g. Ollama), paid if it's a cloud model.
+
+**Prerequisites:** Python 3.14+ and [opencode](https://opencode.ai) (the agent you'll talk through).
+
+```bash
+# 1. Install MARS (editable, from the repo)
+pip install -e ".[dev]"
+
+# 2. Start the world  (creates ./world with a lobby + library on first run)
+mars-world            # or: python -m mars.world.server
+
+# 3. In opencode (run in this repo): the "mars" MCP server is auto-wired
+#    by opencode.jsonc. Load the mars-citizen skill, then just talk:
+#     "load the mars-citizen skill, then look around"
+```
+
+That's it. MARS ships no chat client — opencode is your window into the world. Your agent perceives the room (via `look`/`listen`) and acts (`go`/`say`/`take`) on your behalf, narrating back what it finds.
+
+> **Any MCP client works.** opencode is the *tested* platform, but MARS is just an MCP server — any CLI/agent that speaks MCP can enter the same door.
+
+## Running & connecting
+
+MARS has two modes:
+
+**Local (default — stdio).** opencode spawns the world for you (wired by `opencode.jsonc`). The world lives in `./world`. Personal, single-user, no separate process to manage. One connection per process.
+
+**Network server (SSE / streamable-http).** Run MARS as a standalone service that clients connect to — your own world on another machine, or a **shared** world several avatars join:
+
+```bash
+# start a shared world on this host
+mars-world --transport sse --host 0.0.0.0 --port 7432
+```
+
+Connect opencode (or any MCP client) to it as a **remote** server — in `opencode.jsonc`:
+
+```jsonc
+{ "mcp": { "mars": { "type": "remote", "url": "http://<host>:7432/sse" } } }
+```
+
+When several clients connect to one network server, they share **live presence** — so avatars see each other and can meet in rooms (the multi-avatar case; this is how the DM and specialists become real citizens you talk to). Local stdio can't do that — each spawned process has its own presence.
+
+## Inspiration & prior art
+
+MARS fuses two traditions that have never been joined in the LLM era:
+
+- **The MOO/MUD lineage** (LambdaMOO, 1990s) — open, programmable virtual worlds: rooms, objects, `take`/`drop`, humans as avatars. MARS borrows this object model rather than reinventing it.
+- **The agent-protocol lineage** (FIPA ACL, Google A2A) — opaque agents whose lifecycle is owned externally, not by the substrate. MARS adopts this stance: *the pilot owns the avatar.*
+
+Generative-agent simulations (Smallville / Generative Agents, Project Sid) are related but **closed** — authored worlds with fixed casts that humans only observe. MARS is the opposite: an open place heterogeneous pilots drop into. The full prior-art survey and what is genuinely new live in [`plan.md`](plan.md).
+
+Academic roots:
+
+| Paper | Relevance |
+|-------|-----------|
+| [AgentLink — Living Agents Runtime System](papers/AgentLink_living_agents_runtime_system.pdf) | persistent agents, service-oriented runtime |
+| [EMIKA — System Architecture and Prototypic Realization](papers/EMIKA_System_Architecture_and_Prototypic_Realization.pdf) | multi-agent system architecture and component model |
+| [Agent-Based Counterparty Matching in Agent-Based Trading](papers/Agent-Based_Counterparty_Matching_in_Agent-Based_Trading.pdf) | agent coordination and peer negotiation patterns |
+| [Patient Technology for Impatient Patients](papers/Patient_Technology_for_Impatiently_Patients.pdf) | applied multi-agent system in a domain context |
+| [Method for Access to Location-Dependent Data](papers/Method_computer_and_computer_program_product_for_access_to_location_dependent_data.pdf) | context-aware data access by agents |
+
+## Project layout
 
 ```
 mars/
-├── common/              # Wire framing, models, state, constants
-├── cli/                 # TUI client
-│   ├── client.py        # Event loop, keyboard input, command dispatch
-│   ├── commands.py      # /cmd implementations
-│   ├── renderer.py      # Rich panel rendering (services, chat, connections)
-│   └── nav.py           # Panel navigation + service row builder
-└── server/
-    ├── main.py          # Entry point
-    ├── server.py        # TCP message bus + routing
-    ├── federation.py    # MARS-to-MARS federation
-    └── services/
-        ├── registry.py      # Service factory + availability probes
-        ├── base.py          # Service base class
-        ├── builtin/         # Discovery, Profiler (in-process)
-        ├── llm/             # LLM providers: Ollama, Copilot, z.AI, Mock
-        ├── mcp/             # MCP adapter (stdio subprocess client)
-        └── a2a/             # A2A adapter
+└── world/
+    ├── world.py        # World — rooms, artifacts, inventories as text files (pure logic)
+    └── server.py       # WorldSession + FastMCP server — the single door (the verbs)
+
+.opencode/skills/mars-citizen/SKILL.md   # the citizen skill — load it in opencode
+opencode.jsonc                           # wires the "mars" MCP server into opencode
+world/                                   # the world: rooms/*.md + artifacts/ + avatars/ (auto-created)
 ```
 
 ## References
 
-- AG-UI Protocol — <https://github.com/ag-ui-protocol/ag-ui>
-- AG-UI Specification — <https://docs.ag-ui.com/>
-- A2A Protocol — <https://google.github.io/A2A/>
-- A2A Specification — <https://google.github.io/A2A/specification>
-- MCP Specification — <https://modelcontextprotocol.io/specification>
-- MCP Python SDK — <https://github.com/modelcontextprotocol/python-sdk>
-- Ollama — <https://ollama.com/>
-- z.AI API — <https://docs.z.ai/api-reference/introduction>
-- GitHub Copilot API — <https://docs.github.com/en/copilot>
+- Model Context Protocol — <https://modelcontextprotocol.io/>
+- opencode — <https://opencode.ai>
+- MOO / LambdaMOO — the object model MARS extends
+- A2A — the "pilot owns the lifecycle" philosophy MARS adopts

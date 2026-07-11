@@ -1,96 +1,66 @@
-# MARS — Planning
+# MARS — Planning & Roadmap
 
-## TUI Navigation
+> The vision and principles live in [`README.md`](README.md). This is the **status**, the **roadmap**, and the **prior-art survey**.
 
-### 1. Arrow keys for expand/collapse
-Right arrow on a provider row → expand; Left arrow → collapse (on model row: collapse parent + move cursor up). Enter strictly for spawn/connect — never toggle.
+## Vision in one paragraph
 
-Both Win32 (scan code `0x4b`/`0x4d`) and Unix (`\x1b[C` / `\x1b[D`) paths in `_read_input` need updating. Remove expand/collapse logic from `_activate_services_selection()`.
+MARS is a **world**, not a runtime: an open place where humans and AI agents meet as equal avatars in rooms and coordinate by talking. One door — **MCP** — and every actor walks through it. `opencode` is the default pilot, so MARS ships no client and no LLM layer. The world is a directory of text files; `look`/`listen` read, `say` appends, `take`/`drop` move files.
 
-### 2. Kill key (d) to stop an active agent
-When `panel_focus != "chat"` and the selected row is a running agent, pressing `d` sends `/stop <agent_id>`. Services panel: find the `agent_id` in `state.agents` that matches the selected `(provider, model_id)` row. Connections panel: stop the selected agent directly.
+## Status — Phase 0 done
 
-### 3. Active count badges in section headers
-`render_services()` section headers show `(total · N active)`. LLM active count = agents with `agent_type == "LLMAgent"`; MCP active count = services with `running=True` in `state.discovered_services`.
+A minimal, tested, **stable** world:
 
-### 4. Filesystem service (env-configured)
-`_available_filesystem()` probe: True when `FILESYSTEM_PATH` or `FILESYSTEM_MCP_CMD` is set. `MCPService.__init__`: `command` becomes optional; builds default `["npx", "-y", "@modelcontextprotocol/server-filesystem", path]` from env if not provided. `.env.example`: document both vars. Service stays red when neither is set — correct UX.
+- `mars/world/world.py` — `World`: rooms + artifacts + inventories as plain text files (pure logic).
+- `mars/world/server.py` — `WorldSession` (world + in-memory presence) wrapped as a FastMCP server. The single door.
+- Verbs live: `look · listen · say · go · examine · take · drop · inventory · create · destroy · rooms`.
+- Items: create / examine / take / drop / destroy; taking is exclusive (file-grounded atomic move).
+- Rooms seeded (`lobby`, `library`); admin-authored via the engine / text files.
+- opencode wiring: `opencode.jsonc` (the `mars` MCP server) + `.opencode/skills/mars-citizen/SKILL.md`.
+- Tests: 42 unit + 1 end-to-end (drives the door as a real MCP client, marked `slow`).
 
----
+The previous multi-agent **runtime** code (`mars/cli`, `mars/server`, `mars/common`) has been removed. MARS is now just the world.
 
-## Commands Review vs Copilot / Claude Code
+## Model
 
-Reference sets (2025):
-- **GitHub Copilot Chat**: `/clear`, `/explain`, `/fix`, `/tests`, `/help`, `/new`, `/rename`
-- **GitHub Copilot CLI**: `/clear`, `/model`, `/cwd`, `/usage`, `/undo`, `/agent`
-- **Claude Code**: `/clear`, `/compact`, `/context`, `/plan`, `/agents`, `/stop`, `/cost`, `/review`, `/test`, `/lint`, `/run`, `/history`
+- **A room is an abstract boundary** — a place, a sea, a chest, or an abstract context like a task. The **map** is just the outermost room. So a room *is* a context boundary.
+- **Plain-text persistence** — no database; `world/` is `rooms/*.md` + `artifacts/<room>/` + `avatars/<avatar>/`. Durable state is text; only live presence is in memory.
+- **One door (MCP), no parser** — natural language becomes tool calls inside the connecting agent, never inside MARS. opencode is the tested pilot; any MCP client works.
 
-### Add
+## Roadmap
 
-| Command | Inspired by | Description |
-|---------|-------------|-------------|
-| `/clear` | Copilot + Claude Code | Alias for `/new` — industry-standard name for "clear chat". Zero-friction. |
-| `/cost` | Claude Code `/cost` | Extend `/context` output to include estimated token cost using the current model's pricing. |
-| `/model [name]` | Copilot CLI `/model` | Show or change the model on the current agent without stop + re-spawn. Sends `ctrl set_model` to the wire agent. Updates the display label — the agent ID itself stays stable. |
-| `/ctx [n]` | — | Show or set the context-window limit (tokens) for the current agent. No arg = show current. Sends `ctrl set_ctx`. |
-| `/reasoning [level]` | — | Show or set the reasoning effort for the current agent. Levels: `off \| low \| medium \| high \| max`. No arg = show current. Sends `ctrl set_reasoning`. |
+### Next — model refinements
 
-### Agent naming change required for `/model`
+- **Portable vs fixed items.** Today every item can be taken. Add a *fixed* kind that cannot be picked up (a sign on the wall, a statue). Rooms are inherently non-portable (you enter them, you don't carry them).
+- **`create` makes rooms too.** A "sea" is just a room you create and enter but can't pick up — unify room/item authoring under `create` with a kind, so a citizen can spawn a new context (room) as easily as a note.
+- **Ephemeral talk.** Spoken lines fade after a TTL (default ~60s) — talk is transient, items are the durable record. `listen` returns only recent lines; old ones pruned. (Confirm: only talk decays, not items.)
 
-The current agent ID encodes the model (`llm.ollama.qwen3:4b`). Once the model is changeable at runtime the ID must be **stable** and the model shown separately.
+### Then — multi-avatar (the cast comes alive)
 
-**New scheme:**
+- **A shared, long-lived world server.** Today each MCP connection spawns its own server process (presence is per-process). For avatars to see each other live, run **one** persistent server that many clients connect to — then the **DM** (always-on narrator/router on a free model) and **specialists** (coders/researchers) become real citizens you converse with.
+- **opencode subagents as avatars.** With a shared server, subagents (each pointed at MARS with a skill) enter as avatars; you talk to them in shared rooms. Note: opencode's Task subagents are ephemeral workers — persistent residents need separate connected instances.
+- **Cheap-router DM.** The DM fields you on a free local model and escalates hard asks to a smarter avatar by talking to it — so the human never picks models.
 
-| Field | Value | Notes |
-|-------|-------|-------|
-| `agent_id` | `llm.ollama.1`, `llm.zai.2`, … | provider + monotonic instance counter, no model in ID |
-| `AgentRecord.model` | `qwen3:4b` | updated in-place when `/model` is issued |
-| `AgentRecord.max_ctx` | `int \| None` | token limit; `None` = provider default |
-| `AgentRecord.reasoning` | `off \| low \| medium \| high \| max` | reasoning effort; default `medium` |
-| Display label | `ollama-1 / qwen3:4b` | shown in services panel and connections panel |
+### Later — federation
 
-**Wire frames added to `llm_wire_agent.py`:**
+- Peer nodes host rooms; agents reach remote rooms via MCP. Federation = file sync between nodes (plain text → possibly over git). No A2A, no custom task protocol.
 
-```
-ctrl set_model    {"model": "qwen3:8b"}
-ctrl set_ctx      {"max_ctx": 8192}          # or null to reset to default
-ctrl set_reasoning {"level": "high"}
-```
+## Prior-art survey (does this already exist?)
 
-**`AgentRecord` new fields** (add to `agent_record.py`):
-```python
-max_ctx: int | None = None      # None = provider default
-reasoning: str = "medium"       # off | low | medium | high | max
-```
+**Verdict: the fusion does not exist.** Researched 2026-07-10 across the three MCP directories (official repo, Glama ~53.9k servers, mcp.so) plus the multi-agent-world landscape. Search engines were largely bot-blocked, so this rests on direct primary-source fetches — a quiet competitor could still appear, but as of now:
 
-**Wire agent internals:** `_llm` is swapped out on `set_model` — create a new provider instance with the same kwargs but updated `model=`. On `set_ctx` / `set_reasoning`, store the values and pass them into every `llm.complete()` call via kwargs.
+- **Spatial meeting-place** → MOO/MUD lineage (LambdaMOO): open, rooms, `take`/`drop`, humans as avatars. But it owns its character DB and has no LLM-native agent parity or MCP binding.
+- **Open plug-in / pilot-owns-lifecycle** → A2A / MCP / FIPA ACL: opaque agents, lifecycle external. But no spatial metaphor, no human-as-avatar role.
+- Nothing fuses them.
 
-### Keep as-is (already covered)
+Closest MCP matches: `gesslar/lpc-mud-bridge-mcp` (1★ — one sandboxed assistant in one closed MUD), `Nexlen/mud-mcp` (32★ — single-player). A true shared persistent multi-participant world on-ramped via MCP: **zero results.** Related but different: Generative Agents / Smallville / Project Sid (closed sims), AutoGen / CrewAI / LangGraph (builder frameworks).
 
-| MARS command | Equivalent |
-|-------------|-----------|
-| `/new` | Copilot `/new`, Claude `/clear` |
-| `/rewind` | Copilot CLI `/undo` |
-| `/compact` | Claude Code `/compact` |
-| `/context` | Claude Code `/context` |
-| `/plan` | Claude Code `/plan` |
-| `/agents` | Claude Code `/agents` |
-| `/stop` | Claude Code `/stop` |
-| `!cmd` | Claude Code `/run` |
-| `/ask` | (unique to MARS — ephemeral query) |
-| `/instructions` | (unique to MARS — system prompt injection) |
-| `/spawn`, `/switch`, `/share`, `/search`, `/copy`, `/read`, `/echo`, `/avatar` | (MARS-specific) |
+**Naming collision:** an unrelated 1990s "MCP" = *MUD Client Protocol* exists. Not Anthropic's Model Context Protocol.
 
-### Do not add (out of scope)
+**Reuse, don't rebuild:** MOO object semantics, FIPA performatives, A2A's pilot-owns-lifecycle stance, the MCP SDK, opencode as pilot. **Build (novel):** the open world + MCP as the single on-ramp normalizing humans/agents into equal avatars + talk-and-move suffices for everything, control included.
 
-| Command | Reason |
-|---------|--------|
-| `/explain`, `/fix`, `/tests`, `/lint`, `/review` | IDE-specific code actions; MARS is not an IDE — send as plain messages instead |
-| `/rename` | No persistent conversation names in MARS |
-| `/worktree` | Git-specific, too narrow |
-| `/permissions`, `/hooks`, `/diffs` | Agent framework internals, not user-facing |
-| `/explain-eli5`, `/godmode`, etc. | Prompt modifiers masquerading as commands — not real slash commands |
+## Open questions
 
-### Remove
-
-None — all current MARS commands are working and distinct.
+1. **Shared server shape** — one long-lived process with multiple MCP client connections (needed for live multi-avatar presence). Defines when the DM/specialists become possible.
+2. **Item kinds** — portable vs fixed vs room; how `create` expresses the kind.
+3. **Talk TTL** — default window and whether anything besides talk decays.
+4. **Federation transport** — plain file sync vs git-backed rooms.

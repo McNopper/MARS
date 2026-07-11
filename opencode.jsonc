@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "mars": {
+      "type": "local",
+      "command": ["python", "-m", "mars.world.server", "--world-dir", "world"],
+      "enabled": true
+    }
+  }
+}

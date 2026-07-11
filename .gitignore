@@ -252,3 +252,7 @@ screenshot_current.png
 
 # Pre-built binaries (download separately; not for version control)
 bin/
+
+# MARS world state — auto-created text files (rooms, artifacts, inventories).
+# Anchored to repo root so it does NOT ignore the mars/world/ code package.
+/world/

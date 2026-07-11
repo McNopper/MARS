@@ -5,24 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mars"
 version = "0.1.0"
-description = "Multi-Agent Runtime System – run multiple LLM models in parallel and chat with them."
+description = "Multi-Agent Room System — an open world where humans and AI agents meet as equal avatars and coordinate by talking."
 requires-python = ">=3.14"
 license = "MIT"
 dependencies = [
-    "openai>=1.30",
-    "httpx>=0.27",
-    "pydantic>=2.7",
-    "pyyaml>=6.0",
-    "rich>=13.0",
-    "Pillow>=10.0",
     "mcp>=1.0",
-    "a2a-sdk>=1.0",
 ]
 
 [project.scripts]
-mars = "mars.cli.main:main"
-mars-server = "mars.server.main:main"
-mars-llm-wire-agent = "mars.server.services.llm_wire_agent:main"
+mars-world = "mars.world.server:main"
 
 [project.optional-dependencies]
 dev = [
@@ -30,38 +21,19 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.4",
 ]
-all = [
-    "mars[dev]",
-]
-clipboard = ["pyperclip>=1.8"]
-# Optional: pretty-printing of LaTeX math in the CLI chat renderer.
-math = [
-    "sympy>=1.12",
-    "antlr4-python3-runtime>=4.11,<4.12",
-]
 
 [tool.setuptools.packages.find]
 include = ["mars*"]
 
-[tool.setuptools.package-data]
-"mars.server.agents" = ["agents.ini"]
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-# Tests run in strict tier order: unit → component → module → system.
-# -x stops at the first failure, so a broken unit tier prevents component
-# tests from starting, a broken component tier prevents module tests, and so on.
 testpaths = [
     "tests/unit",
-    "tests/component",
     "tests/module",
-    "tests/system",
 ]
 markers = [
     "unit: isolated single-unit tests (no I/O, no network)",
-    "component: cross-module wiring tests (no network, no subprocesses)",
-    "module: full-feature in-process tests (loopback TCP allowed)",
-    "system: full-stack tests with real processes or external APIs (slow)",
+    "module: full-feature in-process tests (loopback/subprocess allowed)",
     "llm: tests that make real LLM provider calls (excluded from default run)",
     "slow: tests that spawn subprocesses or run long integration scenarios",
 ]
