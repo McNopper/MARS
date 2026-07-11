@@ -32,6 +32,7 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 
 ### Next — model completeness
 - **Item kinds.** Today every item is portable. Add a *fixed* kind (a sign, a statue — can't be taken) and treat rooms as a *non-portable, enterable* kind. One `create` with a kind.
+- **Modify items in place.** Today an item can only be created or destroyed — changing its text means destroy + recreate (what you hit when appending to a note). Add `append`/`write` so notes and whiteboards accumulate content over time.
 - **`create` makes rooms.** A "sea" is a room you create and enter but can't pick up — unify room and item authoring under one verb.
 - **Ephemeral talk.** Spoken lines fade after a TTL (~60s); items stay durable. Mechanism: the server runs a **1-second loop** that timestamps each utterance and prunes lines older than the TTL — fading is **code-driven, not agent-driven**. `listen` returns what's left. Talk is the transient layer; items are the record. (Implementation notes: timestamp stored inline in each transcript line; the prune loop rewrites the room file; guard transcript mutations with a lock since the loop runs concurrently with `say`.)
 - **Items as real-document handles.** An item can point to a real file/URL; `examine` follows the link (the citizen fetches the paper, the spec, the contract it stands for).
