@@ -55,7 +55,7 @@ class WorldSession:
         room = self._room_of(avatar)
         try:
             self.world.take(room, avatar, item)
-        except (FileNotFoundError, ValueError) as exc:
+        except (FileNotFoundError, ValueError, FileExistsError) as exc:
             return f"Could not take {item!r}: {exc}"
         return f"Taken: {item}."
 
@@ -63,7 +63,7 @@ class WorldSession:
         room = self._room_of(avatar)
         try:
             self.world.drop(avatar, room, item)
-        except (FileNotFoundError, ValueError) as exc:
+        except (FileNotFoundError, ValueError, FileExistsError) as exc:
             return f"Could not drop {item!r}: {exc}"
         return f"Dropped: {item}."
 
@@ -83,9 +83,12 @@ class WorldSession:
 
     def create(self, avatar: str, item: str, content: str) -> str:
         room = self._room_of(avatar)
-        if item in self.world.items_in_room(room):
+        try:
+            self.world.create_item(room, item, content)
+        except FileExistsError:
             return f"'{item}' already exists here. Take it first, or choose another name."
-        self.world.put_item_in_room(room, item, content)
+        except ValueError as exc:
+            return f"Could not create {item!r}: {exc}"
         return f"Created: {item} — left here in {room}."
 
     def destroy(self, avatar: str, item: str) -> str:

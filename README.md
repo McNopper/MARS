@@ -188,6 +188,8 @@ Connect opencode (or any MCP client) to it as a **remote** server — in `openco
 
 Across *separate* opencode instances, local stdio gives each its own process and presence; a network server is what lets independent instances share one world live (this is how the DM and specialists become always-on citizens you talk to).
 
+> ⚠️ **Exposing it is unsafe today.** `--host 0.0.0.0` opens an **unauthenticated** server — any caller can act as any avatar (speak, take, destroy). Keep the default loopback bind (`127.0.0.1`) or sit it behind a trusted tunnel/firewall until auth lands. Two more caveats: run **one server per world directory** (the concurrency lock is in-process, not cross-process), and presence is best-effort — a disconnected avatar lingers in `look` until the server restarts.
+
 ---
 
 ## Modify — build your own world

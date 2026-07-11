@@ -16,7 +16,8 @@ A minimal, tested, **stable** world:
 - Items: create / examine / take / drop / destroy; taking is exclusive (file-grounded atomic move).
 - Rooms seeded (`lobby`, `library`); admin-authored via the engine / text files.
 - opencode wiring: `opencode.jsonc` (the `mars` MCP server) + `.opencode/skills/mars-citizen/SKILL.md`.
-- Tests: 42 unit + 1 end-to-end (drives the door as a real MCP client, marked `slow`).
+- Tests: 48 unit + 2 end-to-end (stdio + SSE, drive the door as a real MCP client, marked `slow`).
+- Concurrency: all world file access is serialized by an in-process lock, so concurrent tool calls served by one process cannot interleave. (Caveat: the lock is in-process — run one server per world directory.)
 
 The previous multi-agent **runtime** code (`mars/cli`, `mars/server`, `mars/common`) has been removed. MARS is now just the world.
 
@@ -47,6 +48,7 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 - **Context curation.** Summarise/compact a busy room's transcript so it stays within a context window.
 - **Auth on the network door.** The SSE door is open today; add authentication for shared or public worlds.
 - **Presence persistence / resume.** Optionally persist who's where, so a restart doesn't reset presence.
+- **Presence expiry.** Clear avatars whose clients have disconnected — today they linger in `look` until the server restarts. Needs a heartbeat/TTL (MCP gives no disconnect signal to the verbs).
 - **Observability.** An audit/log view of world events.
 
 ## Prior-art survey (does this already exist?)

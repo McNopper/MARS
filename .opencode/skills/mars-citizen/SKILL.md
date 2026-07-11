@@ -21,8 +21,9 @@ gives you these tools:
 - **destroy** — permanently remove an item (in the room or carried)
 - **rooms** — list all rooms that exist
 
-Every tool takes an **`avatar`** argument — that is *you*. Identify yourself as
-`explorer` unless the user gives you a different name, and pass that name to every call.
+Almost every tool takes an **`avatar`** argument (`rooms` is the exception) — that is
+*you*. Identify yourself as `explorer` unless the user gives you a different name, and
+pass that name to every call that takes one.
 
 ## An avatar is a role
 
