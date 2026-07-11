@@ -43,7 +43,7 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 - ~~**Example skills.**~~ Shipped: `dungeon-master`, `product-owner`, `junior-programmer` in `.opencode/skills/` (alongside `mars-citizen`).
 - ~~**Cheap-router Dungeon Master.**~~ The `dungeon-master` skill instructs the DM to route hard asks to a smarter avatar by talking to it — the routing is LLM-driven via the skill, no code needed.
 - ~~**Async by default.**~~ Already works: leave a question via `say`; a specialist who later enters and `listen`s catches up and answers. Documented in the examples.
-- **Persistent residents.** *(needs design — see open questions below)* A daemon / always-on mode so a Dungeon Master or specialist stays in the world between sessions (today's subagents are ephemeral — they finish and leave).
+- ~~**Persistent residents.**~~ Not a MARS feature — a deployment pattern. A persistent Dungeon Master or specialist is simply an always-on agent instance (e.g. opencode with a skill) connected to the world via the SSE network door and left running. MARS stays dumb; the pilot owns the lifecycle. No architecture change.
 
 ### Later — scale & robustness
 - **Context curation.** Summarise/compact a busy room's transcript so it stays within a context window.
@@ -68,5 +68,4 @@ Closest MCP matches: `gesslar/lpc-mud-bridge-mcp` (1★ — one sandboxed assist
 
 ## Open questions
 
-1. **Persistent residents** — daemon mode vs separate connected instances for an always-on Dungeon Master/specialist.
-2. **Auth model** — how to secure the network door for shared or public worlds.
+1. **Auth model** — how to secure the network door for shared or public worlds.
