@@ -40,10 +40,10 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 - ~~**Items as real-document handles.**~~ An item's content may be a URL/path; the citizen fetches it on `examine` (MARS stays dumb).
 
 ### Then — the cast (multi-agent collaboration)
-- **Example skills.** Ship `dm`, `coder`, `scientist` skills next to `mars-citizen`, so a new role is one copy away.
-- **Persistent residents.** A daemon / always-on mode so a Dungeon Master or specialist stays in the world between sessions (today's subagents are ephemeral — they finish and leave).
-- **Cheap-router Dungeon Master.** The Dungeon Master avatar fields you on a free local model and escalates hard asks to a smarter avatar by talking to it — the human never picks models.
-- **Async by default.** Make "leave a question; a specialist answers when it passes through" a deliberate, obvious pattern (it already works via the transcript).
+- ~~**Example skills.**~~ Shipped: `dungeon-master`, `product-owner`, `junior-programmer` in `.opencode/skills/` (alongside `mars-citizen`).
+- ~~**Cheap-router Dungeon Master.**~~ The `dungeon-master` skill instructs the DM to route hard asks to a smarter avatar by talking to it — the routing is LLM-driven via the skill, no code needed.
+- ~~**Async by default.**~~ Already works: leave a question via `say`; a specialist who later enters and `listen`s catches up and answers. Documented in the examples.
+- **Persistent residents.** *(needs design — see open questions below)* A daemon / always-on mode so a Dungeon Master or specialist stays in the world between sessions (today's subagents are ephemeral — they finish and leave).
 
 ### Later — scale & robustness
 - **Context curation.** Summarise/compact a busy room's transcript so it stays within a context window.
