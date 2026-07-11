@@ -282,6 +282,8 @@ class World:
         kind is "item" (portable, default) or "fixed" (cannot be taken)."""
         with self._lock:
             _validate(item, "item", _ITEM_RE)
+            if item == "fixed":
+                raise ValueError("item name 'fixed' is reserved")
             dst_dir = self._fixed_dir(room) if kind == "fixed" else self._artifacts_dir(room)
             dst_dir.mkdir(parents=True, exist_ok=True)
             dst = dst_dir / item

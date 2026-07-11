@@ -1,8 +1,8 @@
 """The MARS world MCP server — the single door into the world.
 
-Every actor (your interface agent, the DM, specialists) enters through this one
+Every actor (your interface agent, the Dungeon Master, specialists) enters through this one
 MCP server. The verbs are the entire surface: look / listen / say / go / examine /
-take / drop / inventory / create / destroy / rooms. Rooms are admin-authored
+take / drop / inventory / create / modify / destroy / rooms. Rooms are admin-authored
 contexts (the map); citizens live inside them. There is no parser and no second
 door; natural language becomes tool calls inside the connecting agent, never here.
 
@@ -50,15 +50,15 @@ class WorldSession:
         self.last_seen: dict[str, float] = {}
         self._tick = tick
         self._prune_tick = prune_tick
-        self._q: queue.Queue[tuple[callable, Future]] = queue.Queue()
+        self._q: queue.Queue[tuple[object, Future]] = queue.Queue()
         self._running = True
         self._thread = threading.Thread(target=self._run, name="mars-world-worker", daemon=True)
         self._thread.start()
 
-    def _submit(self, fn: callable) -> object:
+    def _submit(self, fn) -> object:
         fut: Future = Future()
         self._q.put((fn, fut))
-        return fut.result()
+        return fut.result(timeout=30)
 
     def _drain(self) -> None:
         while True:
@@ -86,9 +86,12 @@ class WorldSession:
                 pass
             now = time.monotonic()
             if now - last_prune >= self._prune_tick:
-                if self.talk_ttl and self.talk_ttl > 0:
-                    self.world.prune_all(self.talk_ttl)
-                self._reap_idle(now)
+                try:
+                    if self.talk_ttl and self.talk_ttl > 0:
+                        self.world.prune_all(self.talk_ttl)
+                    self._reap_idle(now)
+                except Exception:
+                    pass  # never let housekeeping kill the worker
                 last_prune = now
 
     def shutdown(self) -> None:
@@ -116,6 +119,7 @@ class WorldSession:
     # --- verbs (each runs atomically on the worker thread) ---
     def look(self, avatar: str, room: str | None = None) -> str:
         def op() -> str:
+            self.last_seen[avatar] = time.monotonic()
             target = room or self._room_of(avatar)
             return self.world.look(target, present=self._present_in(target))
         return self._submit(op)
@@ -346,7 +350,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         mcp.settings.host = args.host
         mcp.settings.port = args.port
-        print(f"🌌 MARS world serving — {rooms} room(s) at {where} ({ttl_note})", file=sys.stderr, flush=True)
+        print(f"🌌 MARS world serving — {rooms} room(s) at {where} ({ttl_note}, {pttl_note})", file=sys.stderr, flush=True)
         print(f"   {args.transport} → http://{args.host}:{args.port}", file=sys.stderr, flush=True)
         mcp.run(transport=args.transport)
 
