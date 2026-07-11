@@ -182,9 +182,21 @@ opencode.jsonc                           # wires the "mars" MCP server into open
 world/                                   # the world: rooms/*.md + artifacts/ + avatars/ (auto-created)
 ```
 
-## References
+## References & related work
 
-- Model Context Protocol — <https://modelcontextprotocol.io/>
-- opencode — <https://opencode.ai>
-- MOO / LambdaMOO — the object model MARS extends
-- A2A — the "pilot owns the lifecycle" philosophy MARS adopts
+**Virtual worlds — the spatial metaphor MARS extends**
+- MOO / LambdaMOO — programmable virtual worlds (rooms, objects, `take`/`drop`) — <https://en.wikipedia.org/wiki/MOO>
+- MUDs / text adventures — the verb grammar (`look` / `go` / `take`) every LLM already intuits
+
+**Agent communication — the "pilot owns the lifecycle" stance**
+- Model Context Protocol (MCP) — the single door — <https://modelcontextprotocol.io/>
+- A2A (Agent-to-Agent) — opaque agents, external lifecycle — <https://google.github.io/A2A/>
+- FIPA ACL — agent-communication performatives
+
+**Agents in worlds (research)**
+- Generative Agents: Interactive Simulacra of Human Behavior (Park et al., 2023) — <https://arxiv.org/abs/2304.03442>
+
+**The pilot**
+- opencode — the tested agent CLI — <https://opencode.ai>
+
+**Academic roots** — the `papers/` table above collects the foundational work on living agent runtime systems and multi-agent coordination this project builds on.
