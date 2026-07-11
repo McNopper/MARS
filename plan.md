@@ -12,8 +12,8 @@ A minimal, tested, **stable** world:
 
 - `mars/world/world.py` — `World`: rooms + artifacts + inventories as plain text files (pure logic).
 - `mars/world/server.py` — `WorldSession` (world + in-memory presence) wrapped as a FastMCP server. The single door.
-- Verbs live: `look · listen · say · go · examine · take · drop · inventory · create · destroy · rooms`.
-- Items: create / examine / take / drop / destroy; taking is exclusive (file-grounded atomic move).
+- Verbs live: `look · listen · say · go · examine · take · drop · inventory · create · append · destroy · rooms`.
+- Items: create (with `kind`: item/fixed/room) / examine / take / drop / append / destroy; taking is exclusive; fixed items can't be taken; `append` grows a note in place. An item's content may be a URL/path the citizen fetches (a real-document handle).
 - Rooms seeded (`lobby`, `library`); admin-authored via the engine / text files.
 - opencode wiring: `opencode.jsonc` (the `mars` MCP server) + `.opencode/skills/mars-citizen/SKILL.md`.
 - Tests: 52 unit + 2 end-to-end (stdio + SSE, drive the door as a real MCP client, marked `slow`).
@@ -33,10 +33,11 @@ The previous multi-agent **runtime** code (`mars/cli`, `mars/server`, `mars/comm
 The stable core (verbs, items, rooms, transports, in-session multi-avatar) is done — see **Status** above. Forward work, grouped by theme:
 
 ### Next — model completeness
-- **Item kinds.** Today every item is portable. Add a *fixed* kind (a sign, a statue — can't be taken) and treat rooms as a *non-portable, enterable* kind. One `create` with a kind.
-- **Modify items in place.** Today an item can only be created or destroyed — changing its text means destroy + recreate (what you hit when appending to a note). Add `append`/`write` so notes and whiteboards accumulate content over time.
-- **`create` makes rooms.** A "sea" is a room you create and enter but can't pick up — unify room and item authoring under one verb.
-- **Items as real-document handles.** An item can point to a real file/URL; `examine` follows the link (the citizen fetches the paper, the spec, the contract it stands for).
+*(Done — item kinds, modify-in-place, create-makes-rooms, and real-document handles all shipped. Kept here as a record.)*
+- ~~**Item kinds.**~~ Portable (default), *fixed* (can't be taken), and *room* (non-portable, enterable) via `create(kind=...)`.
+- ~~**Modify items in place.**~~ `append` grows a note/whiteboard in place.
+- ~~**`create` makes rooms.**~~ `create(kind="room")` unifies room + item authoring.
+- ~~**Items as real-document handles.**~~ An item's content may be a URL/path; the citizen fetches it on `examine` (MARS stays dumb).
 
 ### Then — the cast (multi-agent collaboration)
 - **Example skills.** Ship `dm`, `coder`, `scientist` skills next to `mars-citizen`, so a new role is one copy away.
@@ -67,7 +68,5 @@ Closest MCP matches: `gesslar/lpc-mud-bridge-mcp` (1★ — one sandboxed assist
 
 ## Open questions
 
-1. **Item kinds** — portable vs fixed vs room; how `create` expresses the kind.
-2. **Real-document handles** — does an item embed content, link out, or both; how `examine` resolves a link.
-3. **Persistent residents** — daemon mode vs separate connected instances for an always-on DM/specialist.
-4. **Auth model** — how to secure the network door for shared or public worlds.
+1. **Persistent residents** — daemon mode vs separate connected instances for an always-on DM/specialist.
+2. **Auth model** — how to secure the network door for shared or public worlds.

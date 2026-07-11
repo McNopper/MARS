@@ -179,13 +179,26 @@ class World:
     def _artifacts_dir(self, room: str) -> Path:
         return self.root / "artifacts" / room
 
+    def _fixed_dir(self, room: str) -> Path:
+        return self._artifacts_dir(room) / "fixed"
+
     def _inventory_dir(self, avatar: str) -> Path:
         return self.root / "avatars" / avatar
 
     def items_in_room(self, room: str) -> list[str]:
         with self._lock:
+            names: set[str] = set()
             d = self._artifacts_dir(room)
-            return sorted(p.name for p in d.glob("*") if p.is_file()) if d.is_dir() else []
+            if d.is_dir():
+                names.update(p.name for p in d.glob("*") if p.is_file())
+            fd = self._fixed_dir(room)
+            if fd.is_dir():
+                names.update(p.name for p in fd.glob("*") if p.is_file())
+            return sorted(names)
+
+    def is_fixed(self, room: str, item: str) -> bool:
+        with self._lock:
+            return (self._fixed_dir(room) / item).is_file()
 
     def inventory(self, avatar: str) -> list[str]:
         with self._lock:
@@ -195,10 +208,11 @@ class World:
     def read_item(self, room: str, item: str) -> str:
         with self._lock:
             _validate(item, "item", _ITEM_RE)
-            path = self._artifacts_dir(room) / item
-            if not path.is_file():
-                raise FileNotFoundError(f"no item '{item}' in room '{room}'")
-            return path.read_text(encoding="utf-8")
+            for d in (self._artifacts_dir(room), self._fixed_dir(room)):
+                path = d / item
+                if path.is_file():
+                    return path.read_text(encoding="utf-8")
+            raise FileNotFoundError(f"no item '{item}' in room '{room}'")
 
     def read_carried(self, avatar: str, item: str) -> str:
         with self._lock:
@@ -211,10 +225,12 @@ class World:
     def delete_item(self, room: str, item: str) -> None:
         with self._lock:
             _validate(item, "item", _ITEM_RE)
-            path = self._artifacts_dir(room) / item
-            if not path.is_file():
-                raise FileNotFoundError(f"no item '{item}' in room '{room}'")
-            path.unlink()
+            for d in (self._artifacts_dir(room), self._fixed_dir(room)):
+                path = d / item
+                if path.is_file():
+                    path.unlink()
+                    return
+            raise FileNotFoundError(f"no item '{item}' in room '{room}'")
 
     def delete_carried(self, avatar: str, item: str) -> None:
         with self._lock:
@@ -261,13 +277,26 @@ class World:
             dst.write_text(content, encoding="utf-8")
             return dst
 
-    def create_item(self, room: str, item: str, content: str) -> Path:
-        """Atomically create a new item; raise FileExistsError if it already exists."""
+    def create_item(self, room: str, item: str, content: str, *, kind: str = "item") -> Path:
+        """Atomically create a new item; raise FileExistsError if it already exists.
+        kind is "item" (portable, default) or "fixed" (cannot be taken)."""
         with self._lock:
             _validate(item, "item", _ITEM_RE)
-            dst_dir = self._artifacts_dir(room)
+            dst_dir = self._fixed_dir(room) if kind == "fixed" else self._artifacts_dir(room)
             dst_dir.mkdir(parents=True, exist_ok=True)
             dst = dst_dir / item
             with dst.open("x", encoding="utf-8") as fh:
                 fh.write(content)
             return dst
+
+    def append_item(self, room: str, item: str, text: str) -> Path:
+        """Append text to an existing in-room item (portable or fixed)."""
+        with self._lock:
+            _validate(item, "item", _ITEM_RE)
+            for d in (self._artifacts_dir(room), self._fixed_dir(room)):
+                path = d / item
+                if path.is_file():
+                    content = path.read_text(encoding="utf-8")
+                    path.write_text(content + "\n" + text.strip(), encoding="utf-8")
+                    return path
+            raise FileNotFoundError(f"no item '{item}' in room '{room}'")

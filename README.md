@@ -88,10 +88,11 @@ A **room** is an abstract boundary — a place, a sea, a chest, or an abstract c
 | `listen` | read the recent transcript |
 | `say` | speak — appended to the room's transcript |
 | `go <room>` | move to a room (switch your context) |
-| `examine <item>` | read an item's text contents |
+| `create <name> <text>` | author something new — `kind`: `item` (portable), `fixed` (can't be taken), or `room` |
+| `append <item> <text>` | append to an item (a note or whiteboard that grows) |
+| `examine <item>` | read an item's text contents (may be a link the citizen follows) |
 | `take <item>` / `drop <item>` | pick up / leave an item |
 | `inventory` | list what you're carrying |
-| `create <item> <text>` | author a new item (a note, a summary, a paper card) |
 | `destroy <item>` | remove an item for good |
 | `rooms` | list all rooms |
 

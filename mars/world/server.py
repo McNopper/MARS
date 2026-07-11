@@ -128,7 +128,11 @@ class WorldSession:
             room = self._room_of(avatar)
             try:
                 self.world.take(room, avatar, item)
-            except (FileNotFoundError, ValueError, FileExistsError) as exc:
+            except FileNotFoundError:
+                if self.world.is_fixed(room, item):
+                    return f"{item!r} is fixed here — you can't take it."
+                return f"There is no '{item}' here."
+            except (ValueError, FileExistsError) as exc:
                 return f"Could not take {item!r}: {exc}"
             return f"Taken: {item}."
         return self._submit(op)
@@ -161,16 +165,35 @@ class WorldSession:
                     return f"There is no '{item}' here or in your inventory."
         return self._submit(op)
 
-    def create(self, avatar: str, item: str, content: str) -> str:
+    def create(self, avatar: str, name: str, content: str, kind: str = "item") -> str:
+        def op() -> str:
+            if kind == "room":
+                parts = content.strip().split("\n", 1)
+                title = parts[0] or name
+                desc = parts[1].strip() if len(parts) > 1 else ""
+                try:
+                    self.world.create_room(name, title, desc)
+                except (FileExistsError, ValueError) as exc:
+                    return f"Could not build room {name!r}: {exc}"
+                return f"Built room: {name} — {title}."
+            room = self._room_of(avatar)
+            try:
+                self.world.create_item(room, name, content, kind=kind)
+            except FileExistsError:
+                return f"'{name}' already exists here. Take it first, or choose another name."
+            except ValueError as exc:
+                return f"Could not create {name!r}: {exc}"
+            return f"Created: {name} ({kind}) — left here in {room}."
+        return self._submit(op)
+
+    def append(self, avatar: str, item: str, text: str) -> str:
         def op() -> str:
             room = self._room_of(avatar)
             try:
-                self.world.create_item(room, item, content)
-            except FileExistsError:
-                return f"'{item}' already exists here. Take it first, or choose another name."
-            except ValueError as exc:
-                return f"Could not create {item!r}: {exc}"
-            return f"Created: {item} — left here in {room}."
+                self.world.append_item(room, item, text)
+            except (FileNotFoundError, ValueError) as exc:
+                return f"Could not append to {item!r}: {exc}"
+            return f"Appended to: {item}."
         return self._submit(op)
 
     def destroy(self, avatar: str, item: str) -> str:
@@ -252,10 +275,16 @@ def examine(avatar: str, item: str) -> str:
 
 
 @mcp.tool()
-def create(avatar: str, item: str, content: str) -> str:
-    """Author a new item with the given text content and leave it in the room you stand in.
-    Use this to deposit knowledge into the world — a summary, notes, a paper card."""
-    return _session().create(avatar, item, content)
+def create(avatar: str, name: str, content: str, kind: str = "item") -> str:
+    """Author something new. kind: "item" (portable, default), "fixed" (can't be taken — a sign,
+    a statue), or "room" (a new room you can go to; content is "Title\\n\\nDescription")."""
+    return _session().create(avatar, name, content, kind)
+
+
+@mcp.tool()
+def append(avatar: str, item: str, text: str) -> str:
+    """Append text to an existing item in the room (a note or whiteboard that grows over time)."""
+    return _session().append(avatar, item, text)
 
 
 @mcp.tool()

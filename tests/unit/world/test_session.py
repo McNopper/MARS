@@ -64,7 +64,7 @@ class TestItemsThroughSession:
         assert "nothing" in session.inventory("you")
 
     def test_take_missing_item_is_friendly(self, session: WorldSession) -> None:
-        assert "Could not take" in session.take("you", "ghost.txt")
+        assert "no 'ghost.txt'" in session.take("you", "ghost.txt").lower()
 
     def test_second_taker_is_told_the_item_is_gone(self, session: WorldSession) -> None:
         session.world.put_item_in_room("lobby", "book.txt", "pages")
@@ -72,7 +72,7 @@ class TestItemsThroughSession:
         session.go("bob", "lobby")
         assert "Taken" in session.take("alice", "book.txt")
         result = session.take("bob", "book.txt")
-        assert "Could not take" in result
+        assert "no 'book.txt'" in result.lower()
 
     def test_examine_reads_item_in_room(self, session: WorldSession) -> None:
         session.world.put_item_in_room("lobby", "note.txt", "the password is 1234")
@@ -109,3 +109,21 @@ class TestAuthoring:
         session.create("you", "book.txt", "Once upon a time...")
         assert "Taken" in session.take("you", "book.txt")
         assert "book.txt" in session.inventory("you")
+
+    def test_fixed_item_cannot_be_taken(self, session: WorldSession) -> None:
+        assert "Created" in session.create("you", "sign.txt", "Wet paint", kind="fixed")
+        assert "sign.txt" in session.look("you")              # visible in the room
+        assert "fixed" in session.take("you", "sign.txt").lower()
+        assert "sign.txt" not in session.inventory("you")     # not taken
+        assert "Wet paint" in session.examine("you", "sign.txt")  # but examinable
+        assert "Destroyed" in session.destroy("you", "sign.txt")
+
+    def test_append_grows_an_item(self, session: WorldSession) -> None:
+        session.create("you", "board.md", "line one")
+        assert "Appended" in session.append("you", "board.md", "line two")
+        content = session.examine("you", "board.md")
+        assert "line one" in content and "line two" in content
+
+    def test_create_makes_a_room(self, session: WorldSession) -> None:
+        assert "Built room" in session.create("you", "garden", "The Garden\nA quiet green space.", kind="room")
+        assert "Garden" in session.go("you", "garden")
