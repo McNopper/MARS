@@ -45,7 +45,7 @@ world/
     └── you/            # your inventory (files you're carrying)
 ```
 
-A room file is a description plus the running transcript of what's been said. Items are files in the room's folder. Durable memory is text; only live presence (who is connected right now) lives in memory.
+A room file is a description plus the running transcript of what's been said. Items are files in the room's folder — and an item can **map to a real document or object**: a paper, a spec, a contract, a file in a repo. The in-world item is the shared handle everyone can see, examine, and pass around; the real artifact is what it tracks. Durable memory is text; only live presence (who is connected right now) lives in memory.
 
 A **room** is an abstract boundary — a place, a sea, a chest, or an abstract context like a task. The map is just the outermost room. So a room *is* a context: being in a room means carrying its knowledge.
 
