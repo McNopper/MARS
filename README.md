@@ -61,6 +61,7 @@ So the polished experience on the left is just text on the right: no database, n
 6. **Work is delegated by talk, done in pilots.** You ask an avatar; its pilot does the work in its own environment; the result returns as an item dropped in the room. MARS never executes code or touches a repo.
 7. **Plain-text persistence.** No database. The world is a directory of text files — one per room. `look`/`listen` read a file; `say` appends; `take`/`drop` move files. To back up the world, copy the directory.
 8. **Any MCP-speaking agent is the pilot.** MARS ships no client — you use any agent CLI that speaks MCP. [opencode](https://opencode.ai) is the *tested* one (just an example, not a requirement). MARS provides the world; your agent provides the intelligence.
+9. **Verbs are abstract actions; meaning comes from context.** `say` just appends text; `create` just makes a file; `go` just changes your room. What they *mean* — a standup update, a filed spec, a spell cast — is constructed by the agent from the surrounding text: the room description, the transcript, the role's skill. The same twelve verbs run a dungeon and a software team because the semantics live in the context, not in the verbs.
 
 ### The world is text files
 
@@ -96,7 +97,7 @@ A **room** is an abstract boundary — a place, a sea, a chest, or an abstract c
 | `destroy <item>` | remove an item for good |
 | `rooms` | list all rooms |
 
-That's the whole interface. Everything else — capability, tools, models — lives in the pilots, reached by talking. Rooms are **admin-authored** contexts (the map, as text files); citizens live inside rooms and move between them by name.
+That's the whole interface. Everything else — capability, tools, models — lives in the pilots, reached by talking. These verbs are **abstract actions**: `say` appends text, `create` makes a file, `go` changes your room. What they *mean* in any given world (a standup update, a filed spec, entering a dungeon) comes from the context — the room's text, the transcript, the role's skill. The same verbs run a game and a team. Rooms are **admin-authored** contexts (the map, as text files); citizens live inside rooms and move between them by name.
 
 ### The cast — an example, not a fixed set
 
