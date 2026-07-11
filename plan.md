@@ -47,7 +47,7 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 
 ### Later — scale & robustness
 - **Context curation.** Summarise/compact a busy room's transcript so it stays within a context window.
-- **Auth on the network door.** The SSE door is open today; add authentication for shared or public worlds.
+- **Auth & malicious-agent hardening.** A topic on its own — authentication, authorisation, avatar identity verification, and defence against malicious agents on the network door. Clearly future work; the door stays loopback-only until this is designed.
 - **Presence persistence / resume.** Optionally persist who's where, so a restart doesn't reset presence.
 - **Presence expiry.** Clear avatars whose clients have disconnected — today they linger in `look` until the server restarts. Needs a heartbeat/TTL (MCP gives no disconnect signal to the verbs).
 - **Observability.** An audit/log view of world events.
@@ -68,4 +68,4 @@ Closest MCP matches: `gesslar/lpc-mud-bridge-mcp` (1★ — one sandboxed assist
 
 ## Open questions
 
-1. **Auth model** — how to secure the network door for shared or public worlds.
+1. **Auth & security model** — authentication, avatar identity, and malicious-agent defence on the network door. A dedicated topic for future work.
