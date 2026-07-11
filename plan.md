@@ -46,7 +46,7 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 - ~~**Persistent residents.**~~ Not a MARS feature — a deployment pattern. A persistent Dungeon Master or specialist is simply an always-on agent instance (e.g. opencode with a skill) connected to the world via the SSE network door and left running. MARS stays dumb; the pilot owns the lifecycle. No architecture change.
 
 ### Later — scale & robustness
-- **Context curation.** Summarise/compact a busy room's transcript so it stays within a context window.
+- **Context curation (scalability).** Busy rooms could outgrow a context window. Who summarises (the citizen/DM via skill? a dedicated avatar?) or is the ephemeral-talk TTL pruning enough? An open question tied to scalability — future work.
 - **Auth & malicious-agent hardening.** A topic on its own — authentication, authorisation, avatar identity verification, and defence against malicious agents on the network door. Clearly future work; the door stays loopback-only until this is designed.
 - **Presence persistence / crash recovery.** What happens to presence if MARS crashes or restarts — currently in-memory, resets on restart. Whether to persist who's-where (and how to reconcile stale entries) is an open question for future work.
 - **Presence expiry.** Clear avatars whose clients have disconnected — today they linger in `look` until the server restarts. Needs a heartbeat/TTL (MCP gives no disconnect signal to the verbs).
