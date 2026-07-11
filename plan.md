@@ -4,7 +4,7 @@
 
 ## Vision in one paragraph
 
-MARS is a **world**, not a runtime: an open place where humans and AI agents meet as equal avatars in rooms and coordinate by talking. One door — **MCP** — and every actor walks through it. `opencode` is the default pilot, so MARS ships no client and no LLM layer. The world is a directory of text files; `look`/`listen` read, `say` appends, `take`/`drop` move files.
+MARS is a multi-agent runtime expressed as a **world**: an open place where humans and AI agents meet as equal avatars in rooms and coordinate by talking. One door — **MCP** — and every actor walks through it. Any MCP-speaking agent is the pilot (opencode is the tested example); MARS ships no client and no LLM layer. The world is a directory of text files; `look`/`listen` read, `say` appends, `take`/`drop` move files.
 
 ## Status — Phase 0 done
 

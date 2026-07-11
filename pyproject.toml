@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mars"
 version = "0.1.0"
-description = "Multi-Agent Room System — an open world where humans and AI agents meet as equal avatars and coordinate by talking."
+description = "Multi-Agent Runtime System — a multi-agent runtime expressed as a world where humans and AI agents meet as equal avatars and coordinate by talking."
 requires-python = ">=3.14"
 license = "MIT"
 dependencies = [
