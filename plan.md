@@ -49,7 +49,7 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 - **Context curation (scalability).** Busy rooms could outgrow a context window. Who summarises (the citizen/DM via skill? a dedicated avatar?) or is the ephemeral-talk TTL pruning enough? An open question tied to scalability — future work.
 - **Auth & malicious-agent hardening.** A topic on its own — authentication, authorisation, avatar identity verification, and defence against malicious agents on the network door. Clearly future work; the door stays loopback-only until this is designed.
 - **Presence persistence / crash recovery.** What happens to presence if MARS crashes or restarts — currently in-memory, resets on restart. Whether to persist who's-where (and how to reconcile stale entries) is an open question for future work.
-- **Presence expiry.** Clear avatars whose clients have disconnected — today they linger in `look` until the server restarts. Needs a heartbeat/TTL (MCP gives no disconnect signal to the verbs).
+- ~~**Presence expiry.**~~ Done. An avatar that hasn't called a verb within the presence TTL (default 60 s; `--presence-ttl`, `0` = off) is assumed gone and removed from `look`. We can't detect disconnection — we prune on inactivity. Always-on agents stay because they periodically call tools (implicit heartbeat).
 - ~~**Observability.**~~ Not a MARS concern. The per-room transcripts already record everything said; if you want broader logging or audit, that's an outside task (tail the files, sync them to a log system, etc.). MARS stays dumb.
 
 ## Prior-art survey (does this already exist?)

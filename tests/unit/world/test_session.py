@@ -13,7 +13,7 @@ from mars.world.server import WorldSession
 def session(tmp_path: Path):
     w = World(tmp_path / "world")
     w.init()
-    s = WorldSession(w, talk_ttl=0)  # TTL off so transcript tests don't race the pruner
+    s = WorldSession(w, talk_ttl=0, presence_ttl=0)  # TTLs off so tests don't race the pruner
     yield s
     s.shutdown()
 
@@ -90,6 +90,37 @@ class TestItemsThroughSession:
 def test_rooms_lists_all(session: WorldSession) -> None:
     assert "lobby" in session.rooms()
     assert "library" in session.rooms()
+
+
+@pytest.mark.slow
+def test_idle_avatar_is_reaped(tmp_path: Path) -> None:
+    import time
+    w = World(tmp_path / "world")
+    w.init()
+    s = WorldSession(w, talk_ttl=0, presence_ttl=1.0)
+    try:
+        s.go("wanderer", "lobby")
+        assert "wanderer" in s.look("explorer")
+        time.sleep(2.5)  # TTL 1s + prune tick
+        assert "wanderer" not in s.look("explorer")  # assumed gone
+    finally:
+        s.shutdown()
+
+
+@pytest.mark.slow
+def test_active_avatar_stays(tmp_path: Path) -> None:
+    import time
+    w = World(tmp_path / "world")
+    w.init()
+    s = WorldSession(w, talk_ttl=0, presence_ttl=1.0)
+    try:
+        s.say("chatty", "hello")
+        for _ in range(3):
+            time.sleep(0.5)
+            s.say("chatty", "still here")  # implicit heartbeat within TTL
+        assert "chatty" in s.look("explorer")
+    finally:
+        s.shutdown()
 
 
 class TestAuthoring:

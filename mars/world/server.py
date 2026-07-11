@@ -39,12 +39,15 @@ class WorldSession:
         world: World,
         *,
         talk_ttl: float = 60.0,
+        presence_ttl: float = 60.0,
         tick: float = _TICK,
         prune_tick: float = _PRUNE_TICK,
     ) -> None:
         self.world = world
         self.talk_ttl = talk_ttl
+        self.presence_ttl = presence_ttl
         self.presence: dict[str, str] = {}
+        self.last_seen: dict[str, float] = {}
         self._tick = tick
         self._prune_tick = prune_tick
         self._q: queue.Queue[tuple[callable, Future]] = queue.Queue()
@@ -82,16 +85,29 @@ class WorldSession:
             except queue.Empty:
                 pass
             now = time.monotonic()
-            if self.talk_ttl and self.talk_ttl > 0 and now - last_prune >= self._prune_tick:
-                self.world.prune_all(self.talk_ttl)
+            if now - last_prune >= self._prune_tick:
+                if self.talk_ttl and self.talk_ttl > 0:
+                    self.world.prune_all(self.talk_ttl)
+                self._reap_idle(now)
                 last_prune = now
 
     def shutdown(self) -> None:
         self._running = False
         self._thread.join(timeout=2.0)
 
+    def _reap_idle(self, now: float) -> None:
+        """Assume an avatar is gone if it hasn't called a verb within the presence TTL.
+        We can't detect disconnection — we just prune on inactivity. Always-on agents
+        stay because they periodically call tools (implicit heartbeat)."""
+        if self.presence_ttl and self.presence_ttl > 0:
+            stale = [a for a, t in self.last_seen.items() if now - t > self.presence_ttl]
+            for a in stale:
+                self.presence.pop(a, None)
+                self.last_seen.pop(a, None)
+
     # --- presence helpers (run on the worker thread, so no lock needed) ---
     def _room_of(self, avatar: str) -> str:
+        self.last_seen[avatar] = time.monotonic()
         return self.presence.setdefault(avatar, "lobby")
 
     def _present_in(self, room: str) -> list[str]:
@@ -117,6 +133,7 @@ class WorldSession:
 
     def go(self, avatar: str, room: str) -> str:
         def op() -> str:
+            self.last_seen[avatar] = time.monotonic()
             if not self.world.room_exists(room):
                 return f"There is no room called '{room}'. Rooms: {', '.join(self.world.list_rooms())}"
             self.presence[avatar] = room
@@ -149,6 +166,7 @@ class WorldSession:
 
     def inventory(self, avatar: str) -> str:
         def op() -> str:
+            self.last_seen[avatar] = time.monotonic()
             items = self.world.inventory(avatar)
             return "You carry: " + (", ".join(items) if items else "nothing")
         return self._submit(op)
@@ -221,7 +239,8 @@ def _session() -> WorldSession:
         world = World(os.environ.get("MARS_WORLD_DIR", "world"))
         world.init()
         ttl = float(os.environ.get("MARS_TALK_TTL", "60"))
-        _SESSION = WorldSession(world, talk_ttl=ttl)
+        pttl = float(os.environ.get("MARS_PRESENCE_TTL", "60"))
+        _SESSION = WorldSession(world, talk_ttl=ttl, presence_ttl=pttl)
     return _SESSION
 
 
@@ -305,6 +324,8 @@ def main(argv: list[str] | None = None) -> None:
                         help="directory holding the world's text files (default: ./world)")
     parser.add_argument("--talk-ttl", default=os.environ.get("MARS_TALK_TTL", "60"), type=float,
                         help="seconds before spoken lines are pruned (default: 60; 0 disables)")
+    parser.add_argument("--presence-ttl", default=os.environ.get("MARS_PRESENCE_TTL", "60"), type=float,
+                        help="seconds before an idle avatar is removed from presence (default: 60; 0 disables)")
     parser.add_argument("--transport", choices=["stdio", "sse", "streamable-http"], default="stdio",
                         help="how to expose the world (default: stdio — spawned by your agent)")
     parser.add_argument("--host", default="127.0.0.1", help="bind address for network transports")
@@ -314,12 +335,13 @@ def main(argv: list[str] | None = None) -> None:
     global _SESSION
     world = World(args.world_dir)
     world.init()
-    _SESSION = WorldSession(world, talk_ttl=args.talk_ttl)
+    _SESSION = WorldSession(world, talk_ttl=args.talk_ttl, presence_ttl=args.presence_ttl)
     rooms = len(world.list_rooms())
     where = Path(args.world_dir).resolve()
     ttl_note = f"talk TTL {args.talk_ttl:.0f}s" if args.talk_ttl and args.talk_ttl > 0 else "talk TTL off"
+    pttl_note = f"presence TTL {args.presence_ttl:.0f}s" if args.presence_ttl and args.presence_ttl > 0 else "presence TTL off"
     if args.transport == "stdio":
-        print(f"🌌 MARS world ready — {rooms} room(s) at {where} ({ttl_note}, stdio)", file=sys.stderr, flush=True)
+        print(f"🌌 MARS world ready — {rooms} room(s) at {where} ({ttl_note}, {pttl_note}, stdio)", file=sys.stderr, flush=True)
         mcp.run()
     else:
         mcp.settings.host = args.host
