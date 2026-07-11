@@ -50,7 +50,7 @@ The stable core (verbs, items, rooms, transports, in-session multi-avatar) is do
 - **Auth & malicious-agent hardening.** A topic on its own — authentication, authorisation, avatar identity verification, and defence against malicious agents on the network door. Clearly future work; the door stays loopback-only until this is designed.
 - **Presence persistence / crash recovery.** What happens to presence if MARS crashes or restarts — currently in-memory, resets on restart. Whether to persist who's-where (and how to reconcile stale entries) is an open question for future work.
 - **Presence expiry.** Clear avatars whose clients have disconnected — today they linger in `look` until the server restarts. Needs a heartbeat/TTL (MCP gives no disconnect signal to the verbs).
-- **Observability.** An audit/log view of world events.
+- ~~**Observability.**~~ Not a MARS concern. The per-room transcripts already record everything said; if you want broader logging or audit, that's an outside task (tail the files, sync them to a log system, etc.). MARS stays dumb.
 
 ## Prior-art survey (does this already exist?)
 
