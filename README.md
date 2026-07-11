@@ -116,6 +116,8 @@ Notably **absent**: no LLM/provider layer, no tool-calling loop, no A2A, no AG-U
 ```bash
 # 1. Install MARS (editable, from the repo)
 pip install -e ".[dev]"
+#    The `mars-world` command is installed by this. If it's not on your PATH
+#    (common on Windows), use `python -m mars.world.server` instead — same thing.
 
 # 2. Start the world  (creates ./world with a lobby + library on first run)
 mars-world            # or: python -m mars.world.server
@@ -128,6 +130,8 @@ mars-world            # or: python -m mars.world.server
 That's it. MARS ships no chat client — opencode is your window into the world. Your agent perceives the room (via `look`/`listen`) and acts (`go`/`say`/`take`) on your behalf, narrating back what it finds.
 
 > **Any MCP client works.** opencode is the *tested* platform, but MARS is just an MCP server — any CLI/agent that speaks MCP can enter the same door.
+
+**Uninstall:** `pip uninstall mars` removes the package and the `mars-world` command. The world itself is just the `./world` folder — delete it to wipe a world.
 
 ## Running & connecting
 
