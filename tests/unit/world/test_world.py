@@ -1,4 +1,4 @@
-"""Unit tests for the MARS world engine (text-file rooms, artifacts, inventory)."""
+"""Unit tests for the MARS world engine (text-file rooms: description + protocol + transcript)."""
 from __future__ import annotations
 
 import threading
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mars.world.world import World
+from mars.world.world import MAX_READ_CHARS, World
 
 
 @pytest.fixture()
@@ -18,36 +18,117 @@ def world(tmp_path: Path) -> World:
 
 
 class TestRooms:
-    def test_init_creates_default_rooms_dir_and_lobby(self, world: World) -> None:
+    def test_init_seeds_only_lobby(self, world: World) -> None:
         assert world.room_exists("lobby")
         assert "lobby" in world.list_rooms()
         assert (world.root / "rooms").is_dir()
-        assert (world.root / "artifacts").is_dir()
-        assert (world.root / "avatars").is_dir()
+        assert world.list_rooms() == ["lobby"]  # nothing else seeded; the rest is dynamic
+
+    def test_no_artifacts_or_avatars_dirs(self, world: World) -> None:
+        assert not (world.root / "artifacts").exists()
+        assert not (world.root / "avatars").exists()
 
     def test_create_room_then_list_and_exists(self, world: World) -> None:
         world.create_room("cellar", "The Cellar", "Damp and dark.")
         assert world.room_exists("cellar")
         assert "cellar" in world.list_rooms()
 
-    def test_look_shows_description_present_and_items(self, world: World) -> None:
-        world.create_room("library", "The Library", "Dusty shelves line the walls.", exist_ok=True)
-        world.put_item_in_room("library", "map.txt", "X marks the spot")
-        view = world.look("library", present=["you", "dm"])
-        assert "The Library" in view
-        assert "Dusty shelves" in view
+    def test_create_room_rejects_empty_title(self, world: World) -> None:
+        with pytest.raises(ValueError):
+            world.create_room("cellar", "   ", "Damp and dark.")
+
+    def test_create_room_rejects_separator_in_description(self, world: World) -> None:
+        with pytest.raises(ValueError):
+            world.create_room("cellar", "The Cellar", "Damp.\n\n---\n\nDark.")
+
+    def test_create_room_existing_raises_unless_forced(self, world: World) -> None:
+        with pytest.raises(FileExistsError):
+            world.create_room("lobby", "x", "y")
+        world.create_room("lobby", "The Lobby", "overwritten", exist_ok=True)
+        assert "overwritten" in world.look("lobby")
+
+    def test_empty_description_defaults_to_title(self, world: World) -> None:
+        world.create_room("void", "The Void", "")
+        view = world.look("void")
+        assert "The Void" in view  # title and description both present
+
+
+class TestLook:
+    def test_shows_description_and_present(self, world: World) -> None:
+        view = world.look("lobby", present=["you", "dm"])
+        assert "The Lobby" in view
         assert "Present: dm, you" in view
-        assert "Items: map.txt" in view
+        assert "Protocol" not in view  # empty protocol → no hint
 
-    def test_look_omits_present_and_items_when_empty(self, world: World) -> None:
+    def test_hints_at_protocol_when_present(self, world: World) -> None:
+        world.write_protocol("lobby", "1. be kind\n2. be brief")
         view = world.look("lobby")
-        assert "Present" not in view
-        assert "Items" not in view
+        assert "Protocol: 2 line(s)" in view
 
-    def test_look_unknown_room_lists_alternatives(self, world: World) -> None:
+    def test_unknown_room_lists_alternatives(self, world: World) -> None:
         view = world.look("cellar")
         assert "no room" in view.lower()
         assert "lobby" in view
+
+
+class TestProtocol:
+    def test_read_empty_protocol(self, world: World) -> None:
+        assert world.read_protocol("lobby") == "(no protocol yet — write one)"
+
+    def test_write_then_read(self, world: World) -> None:
+        world.write_protocol("lobby", "# Charter\n\n1. be kind")
+        assert world.read_protocol("lobby") == "# Charter\n\n1. be kind"
+
+    def test_write_replaces(self, world: World) -> None:
+        world.write_protocol("lobby", "v1")
+        world.write_protocol("lobby", "v2")
+        assert world.read_protocol("lobby") == "v2"
+
+    def test_write_empty_clears(self, world: World) -> None:
+        world.write_protocol("lobby", "the rules")
+        world.write_protocol("lobby", "")
+        assert world.read_protocol("lobby") == "(no protocol yet — write one)"
+
+    def test_append_merges(self, world: World) -> None:
+        world.write_protocol("lobby", "one")
+        world.append_protocol("lobby", "two")
+        assert world.read_protocol("lobby") == "one\n\ntwo"
+
+    def test_append_to_empty(self, world: World) -> None:
+        world.append_protocol("lobby", "first")
+        assert world.read_protocol("lobby") == "first"
+
+    def test_write_rejects_separator_line(self, world: World) -> None:
+        with pytest.raises(ValueError):
+            world.write_protocol("lobby", "above\n\n---\n\nbelow")
+        assert world.read_protocol("lobby") == "(no protocol yet — write one)"  # nothing written
+
+    def test_append_rejects_separator_line(self, world: World) -> None:
+        world.write_protocol("lobby", "keep")
+        with pytest.raises(ValueError):
+            world.append_protocol("lobby", "---")
+        assert world.read_protocol("lobby") == "keep"  # unchanged
+
+    def test_read_caps_huge_protocol(self, world: World) -> None:
+        world.write_protocol("lobby", "x" * (MAX_READ_CHARS + 100))
+        out = world.read_protocol("lobby")
+        assert "truncated" in out
+        assert len(out) < MAX_READ_CHARS + 200
+
+    def test_protocol_survives_chat_and_prune(self, world: World) -> None:
+        world.write_protocol("lobby", "the contract")
+        world.say("lobby", "you", "hello")
+        assert world.prune_room("lobby", ttl_seconds=60) == 0  # fresh line kept
+        assert world.read_protocol("lobby") == "the contract"
+        assert "you: hello" in world.listen("lobby")
+
+    def test_read_unknown_room_raises(self, world: World) -> None:
+        with pytest.raises(FileNotFoundError):
+            world.read_protocol("cellar")
+
+    def test_write_unknown_room_raises(self, world: World) -> None:
+        with pytest.raises(FileNotFoundError):
+            world.write_protocol("cellar", "x")
 
 
 class TestTranscript:
@@ -73,14 +154,16 @@ class TestTranscript:
         assert world.prune_room("lobby", ttl_seconds=60) == 0
         assert "fresh" in world.listen("lobby")
 
-    def test_prune_removes_expired_lines(self, world: World) -> None:
+    def test_prune_removes_expired_lines_and_preserves_protocol(self, world: World) -> None:
         world.create_room("cellar", "The Cellar", "damp")
+        world.write_protocol("cellar", "survives pruning")
         old = (datetime.now() - timedelta(seconds=120)).isoformat(timespec="seconds")
         world.room_path("cellar").write_text(
-            f"# The Cellar\n\ndamp\n\n---\n{old}\ta: stale\n", encoding="utf-8"
+            f"# The Cellar\n\ndamp\n\n---\n\nsurvives pruning\n\n---\n{old}\ta: stale\n", encoding="utf-8"
         )
         assert world.prune_room("cellar", ttl_seconds=60) == 1
         assert world.listen("cellar") == "(silence)"
+        assert world.read_protocol("cellar") == "survives pruning"
 
     def test_listen_filters_by_ttl(self, world: World) -> None:
         world.create_room("cellar", "The Cellar", "damp")
@@ -109,70 +192,21 @@ class TestTranscript:
         assert "you: persisted" in reload.listen("lobby")
 
 
-class TestItemsAndInventory:
-    def test_take_moves_item_from_room_to_inventory(self, world: World) -> None:
-        world.put_item_in_room("lobby", "map.txt", "X")
-        assert "map.txt" in world.items_in_room("lobby")
-        world.take("lobby", "you", "map.txt")
-        assert "map.txt" not in world.items_in_room("lobby")
-        assert "map.txt" in world.inventory("you")
+class TestLegacyFormat:
+    def test_two_section_file_reads_as_description_and_transcript(self, world: World) -> None:
+        path = world.room_path("lobby")
+        path.write_text("# Old\n\nlegacy desc\n\n---\n2020-01-01T00:00:00\tyou: hi\n", encoding="utf-8")
+        assert "legacy desc" in world.look("lobby")
+        assert world.read_protocol("lobby") == "(no protocol yet — write one)"
+        assert "you: hi" in world.listen("lobby")
 
-    def test_take_unknown_item_raises(self, world: World) -> None:
-        with pytest.raises(FileNotFoundError):
-            world.take("lobby", "you", "nope.txt")
-
-    def test_drop_moves_item_back_to_room(self, world: World) -> None:
-        world.put_item_in_room("lobby", "map.txt", "X")
-        world.take("lobby", "you", "map.txt")
-        world.drop("you", "lobby", "map.txt")
-        assert "map.txt" in world.items_in_room("lobby")
-        assert "map.txt" not in world.inventory("you")
-
-    def test_drop_not_carried_raises(self, world: World) -> None:
-        with pytest.raises(FileNotFoundError):
-            world.drop("you", "lobby", "map.txt")
-
-    def test_item_can_only_be_taken_once(self, world: World) -> None:
-        world.put_item_in_room("lobby", "book.txt", "pages")
-        world.take("lobby", "alice", "book.txt")
-        assert world.inventory("alice") == ["book.txt"]
-        with pytest.raises(FileNotFoundError):
-            world.take("lobby", "bob", "book.txt")
-        assert world.inventory("bob") == []
-
-    def test_taken_item_moves_to_taker_and_is_examinable(self, world: World) -> None:
-        world.put_item_in_room("lobby", "book.txt", "pages")
-        world.take("lobby", "alice", "book.txt")
-        assert world.read_carried("alice", "book.txt") == "pages"
-        with pytest.raises(FileNotFoundError):
-            world.read_item("lobby", "book.txt")
-
-    def test_take_refuses_to_overwrite_carried_item(self, world: World) -> None:
-        world.put_item_in_room("lobby", "map.txt", "v1")
-        world.take("lobby", "alice", "map.txt")
-        world.put_item_in_room("lobby", "map.txt", "v2")
-        with pytest.raises(FileExistsError):
-            world.take("lobby", "alice", "map.txt")
-        assert world.read_carried("alice", "map.txt") == "v1"
-
-    def test_drop_refuses_to_overwrite_room_item(self, world: World) -> None:
-        world.put_item_in_room("lobby", "map.txt", "carried")
-        world.take("lobby", "alice", "map.txt")
-        world.put_item_in_room("lobby", "map.txt", "already-here")
-        with pytest.raises(FileExistsError):
-            world.drop("alice", "lobby", "map.txt")
-
-    def test_create_item_is_exclusive(self, world: World) -> None:
-        world.create_item("lobby", "note.txt", "first")
-        with pytest.raises(FileExistsError):
-            world.create_item("lobby", "note.txt", "second")
-        assert world.read_item("lobby", "note.txt") == "first"
-
-    def test_create_room_refuses_existing_unless_forced(self, world: World) -> None:
-        with pytest.raises(FileExistsError):
-            world.create_room("lobby", "The Lobby", "overwritten")
-        world.create_room("lobby", "The Lobby", "overwritten", exist_ok=True)
-        assert "overwritten" in world.look("lobby")
+    def test_writing_protocol_upgrades_to_three_sections(self, world: World) -> None:
+        path = world.room_path("lobby")
+        path.write_text("# Old\n\nlegacy desc\n\n---\n2020-01-01T00:00:00\tyou: hi\n", encoding="utf-8")
+        world.write_protocol("lobby", "new deal")
+        assert world.read_protocol("lobby") == "new deal"
+        assert "you: hi" in world.listen("lobby")  # transcript preserved
+        assert "legacy desc" in world.look("lobby")  # description preserved
 
 
 class TestConcurrency:
@@ -193,27 +227,22 @@ class TestConcurrency:
         transcript = world.listen("lobby", lines=expected * 2)
         assert transcript.count("msg-") == expected
 
-    def test_concurrent_takers_only_one_wins(self, world: World) -> None:
-        world.put_item_in_room("lobby", "gem.txt", "shiny")
-        winners: list[int] = []
-        guard = threading.Lock()
+    def test_concurrent_appends_lose_no_lines(self, world: World) -> None:
+        n, each = 16, 8
+        expected = n * each
 
-        def taker(i: int) -> None:
-            try:
-                world.take("lobby", f"a{i}", "gem.txt")
-            except FileNotFoundError:
-                return
-            except FileExistsError:
-                return
-            with guard:
-                winners.append(i)
+        def appender(i: int) -> None:
+            for j in range(each):
+                world.append_protocol("lobby", f"p-{i}-{j}")
 
-        threads = [threading.Thread(target=taker, args=(i,)) for i in range(24)]
+        threads = [threading.Thread(target=appender, args=(i,)) for i in range(n)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
-        assert len(winners) == 1
+
+        protocol = world.read_protocol("lobby")
+        assert protocol.count("p-") == expected
 
 
 class TestSafety:
@@ -221,8 +250,3 @@ class TestSafety:
     def test_invalid_room_name_rejected(self, world: World, bad: str) -> None:
         with pytest.raises(ValueError):
             world.room_path(bad)
-
-    @pytest.mark.parametrize("bad", ["../x", "a/b", "", " leading"])
-    def test_invalid_item_name_rejected(self, world: World, bad: str) -> None:
-        with pytest.raises(ValueError):
-            world.take("lobby", "you", bad)

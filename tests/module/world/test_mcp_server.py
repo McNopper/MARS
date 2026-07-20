@@ -1,6 +1,6 @@
 """End-to-end test: drive the MARS world MCP server as a real MCP client.
 
-This is the proof of the whole thesis — an MCP client (like opencode) connects to
+This is the proof of the whole thesis - an MCP client (like opencode) connects to
 the world server over stdio and drives the verbs. Spawns a subprocess, so it is
 marked ``slow`` and excluded from the default run.
 """
@@ -45,10 +45,15 @@ async def _drive(world_dir: Path) -> dict:
             out["look_lobby"] = _text(await session.call_tool("look", {"avatar": "you"}))
             out["say"] = _text(await session.call_tool("say", {"avatar": "you", "text": "hello world"}))
             out["listen"] = _text(await session.call_tool("listen", {"avatar": "you"}))
-            out["rooms"] = _text(await session.call_tool("rooms", {}))
+            out["rooms_before"] = _text(await session.call_tool("rooms", {}))
             out["go_bad"] = _text(await session.call_tool("go", {"avatar": "you", "room": "cellar"}))
-            out["go_library"] = _text(await session.call_tool("go", {"avatar": "you", "room": "library"}))
-            out["inv_empty"] = _text(await session.call_tool("inventory", {"avatar": "you"}))
+            out["create_room"] = _text(await session.call_tool(
+                "create_room", {"avatar": "you", "name": "workshop",
+                                "content": "The Workshop\nA room to build things in."}))
+            out["go_workshop"] = _text(await session.call_tool("go", {"avatar": "you", "room": "workshop"}))
+            out["write"] = _text(await session.call_tool("write", {"avatar": "you", "text": "the contract"}))
+            out["append"] = _text(await session.call_tool("append", {"avatar": "you", "text": "rule two"}))
+            out["read"] = _text(await session.call_tool("read", {"avatar": "you"}))
             return out
 
 
@@ -57,18 +62,28 @@ async def test_mcp_client_drives_the_world(tmp_path: Path) -> None:
     world_dir = tmp_path / "world"
     result = await _drive(world_dir)
 
-    expected_verbs = {"look", "listen", "say", "go", "take", "drop", "inventory", "rooms"}
+    expected_verbs = {"look", "listen", "say", "go", "rooms", "create_room", "read", "write", "append"}
     assert expected_verbs <= result["tool_names"], f"missing verbs: {expected_verbs - result['tool_names']}"
 
     assert "Lobby" in result["look_lobby"]
     assert "you: hello world" in result["listen"]
-    assert "lobby" in result["rooms"]
+    assert "lobby" in result["rooms_before"]
+    # only lobby is seeded; the rest is created dynamically
+    assert "workshop" not in result["rooms_before"]
     assert "no room" in result["go_bad"].lower()
-    assert "Library" in result["go_library"]
-    assert "nothing" in result["inv_empty"]
+    assert "Built room" in result["create_room"]
+    assert "Workshop" in result["go_workshop"]
+    assert "Protocol written" in result["write"]
+    assert "Protocol updated" in result["append"]
+    assert "the contract" in result["read"]
+    assert "rule two" in result["read"]
 
-    first_look = (world_dir / "rooms" / "lobby.md").read_text(encoding="utf-8")
-    assert "you: hello world" in first_look
+    lobby = (world_dir / "rooms" / "lobby.md").read_text(encoding="utf-8")
+    assert "you: hello world" in lobby
+    # the protocol was written in the dynamically created workshop room
+    workshop = (world_dir / "rooms" / "workshop.md").read_text(encoding="utf-8")
+    assert "the contract" in workshop
+    assert "rule two" in workshop
 
 
 @pytest.mark.asyncio

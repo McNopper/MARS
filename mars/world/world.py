@@ -3,19 +3,32 @@
 Layout::
 
     root/
-      rooms/<room>.md          a room (= a context): description + transcript
-      artifacts/<room>/<item>  items lying in a room
-      avatars/<avatar>/<item>  an avatar's inventory
+      rooms/<room>.md          a room (= a context): description + protocol + transcript
 
 A room is an abstract boundary — a place, a sea, a chest, or an abstract context
-like a task. The map is just the outermost room. A room file is a Markdown title,
-a description, a ``---`` line, then the running transcript. Each transcript line is
-``<iso8601>\\t<avatar>: <text>`` so old talk can be pruned by age; the timestamp is
-stripped for display.
+like a task. The map is just the outermost room. A room file has three sections,
+separated by lines containing only ``---``:
+
+1. a Markdown title plus the **fixed description** (set at creation; no verb
+   can change it),
+2. the **protocol** — a durable document everyone in the room works on: a
+   contract, a backlog, minutes. It is the common, *reduced* output of the
+   conversation, distilled by the participants (never by the server),
+3. the running **transcript** of what has been said — volatile. Each line is
+   ``<iso8601>\t<avatar>: <text>`` so old talk can be pruned by age; the
+   timestamp is stripped for display.
+
+A file with a single ``---`` separator is the legacy two-section format
+(description + transcript); its protocol reads as empty until someone writes one.
 
 All file access is serialized by a single reentrant lock. At runtime the MCP server
 routes every verb through one worker thread (see ``WorldSession``), so the lock is
 uncontended and the worker also owns the prune tick — they can never race.
+
+Note on clocks: transcript timestamps are *wall-clock* (``datetime.now()``) on
+purpose — they are persisted in the room file and stay meaningful across
+restarts. Presence TTLs in ``server.py`` use a *monotonic* clock instead,
+because they are pure in-memory intervals that must be immune to clock jumps.
 """
 from __future__ import annotations
 
@@ -27,13 +40,21 @@ from pathlib import Path
 _SEPARATOR = "---"
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-]*$")
-_ITEM_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-\. ]*$")
+
+MAX_READ_CHARS = 64_000  # protocol reads are capped at this many characters (truncated with a note)
 
 
 def _validate(name: str, label: str, pattern: re.Pattern[str]) -> str:
     if not name or not pattern.match(name) or name in (".", ".."):
         raise ValueError(f"invalid {label}: {name!r}")
     return name
+
+
+def _check_no_separator(text: str, label: str) -> None:
+    """Lines of exactly ``---`` are reserved as section separators."""
+    for line in text.splitlines():
+        if line.strip() == _SEPARATOR:
+            raise ValueError(f"{label} must not contain a line of exactly '{_SEPARATOR}' (reserved separator)")
 
 
 class World:
@@ -43,22 +64,13 @@ class World:
 
     def init(self, *, lobby: bool = True) -> None:
         with self._lock:
-            for d in ("rooms", "artifacts", "avatars"):
-                (self.root / d).mkdir(parents=True, exist_ok=True)
-            if lobby:
-                if not self.room_exists("lobby"):
-                    self.create_room(
-                        "lobby",
-                        "The Lobby",
-                        "A bright, open room. The MARS world starts here.",
-                    )
-                if not self.room_exists("library"):
-                    self.create_room(
-                        "library",
-                        "The Library",
-                        "Dusty shelves line the walls, stuffed with notes and references "
-                        "left by earlier travellers. A quiet place to read and think.",
-                    )
+            (self.root / "rooms").mkdir(parents=True, exist_ok=True)
+            if lobby and not self.room_exists("lobby"):
+                self.create_room(
+                    "lobby",
+                    "The Lobby",
+                    "A bright, open room. The MARS world starts here.",
+                )
 
     def room_path(self, room: str) -> Path:
         _validate(room, "room", _NAME_RE)
@@ -76,26 +88,36 @@ class World:
     def create_room(self, room: str, title: str, description: str, *, exist_ok: bool = False) -> None:
         with self._lock:
             _validate(room, "room", _NAME_RE)
+            if not title.strip():
+                raise ValueError("room title must not be empty")
+            description = description.strip() or title.strip()
+            _check_no_separator(description, "room description")
             path = self.room_path(room)
             if path.is_file() and not exist_ok:
                 raise FileExistsError(f"room {room!r} already exists; pass exist_ok=True to overwrite")
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                f"# {title}\n\n{description.strip()}\n\n{_SEPARATOR}\n",
-                encoding="utf-8",
-            )
-            (self.root / "artifacts" / room).mkdir(parents=True, exist_ok=True)
+            self._write_room(room, f"# {title.strip()}\n\n{description}", "", "")
 
-    def _read_room(self, room: str) -> tuple[str, str]:
+    def _read_room(self, room: str) -> tuple[str, str, str]:
+        """Return (description, protocol, transcript). A single ``---`` separator means
+        the legacy two-section format: description + transcript, protocol empty."""
         text = self.room_path(room).read_text(encoding="utf-8")
         lines = text.split("\n")
-        for i, line in enumerate(lines):
-            if line.strip() == _SEPARATOR:
-                return "\n".join(lines[:i]).strip(), "\n".join(lines[i + 1 :]).strip()
-        return text.strip(), ""
+        seps = [i for i, line in enumerate(lines) if line.strip() == _SEPARATOR]
+        if not seps:
+            return text.strip(), "", ""
+        description = "\n".join(lines[: seps[0]]).strip()
+        if len(seps) == 1:
+            return description, "", "\n".join(lines[seps[0] + 1 :]).strip()
+        protocol = "\n".join(lines[seps[0] + 1 : seps[1]]).strip()
+        transcript = "\n".join(lines[seps[1] + 1 :]).strip()
+        return description, protocol, transcript
 
-    def _write_room(self, room: str, description: str, transcript: str) -> None:
+    def _write_room(self, room: str, description: str, protocol: str, transcript: str) -> None:
         out = description.rstrip() + "\n\n" + _SEPARATOR + "\n"
+        if protocol.strip():
+            out += "\n" + protocol.strip() + "\n\n"
+        out += _SEPARATOR + "\n"
         if transcript.strip():
             out += transcript.strip() + "\n"
         self.room_path(room).write_text(out, encoding="utf-8")
@@ -116,21 +138,21 @@ class World:
             if not self.room_exists(room):
                 available = ", ".join(self.list_rooms()) or "(none)"
                 return f"There is no room called '{room}'. Rooms: {available}"
-            description, _ = self._read_room(room)
+            description, protocol, _ = self._read_room(room)
             parts = [description]
             folks = sorted(present or [])
             if folks:
                 parts.append("Present: " + ", ".join(folks))
-            items = self.items_in_room(room)
-            if items:
-                parts.append("Items: " + ", ".join(items))
+            lines = len(protocol.splitlines()) if protocol else 0
+            if lines:
+                parts.append(f"Protocol: {lines} line(s) — call read to see it")
             return "\n".join(parts)
 
     def listen(self, room: str, lines: int = 20, ttl_seconds: float | None = None) -> str:
         with self._lock:
             if not self.room_exists(room):
                 return f"There is no room called '{room}'."
-            _, transcript = self._read_room(room)
+            _, _, transcript = self._read_room(room)
             if not transcript:
                 return "(silence)"
             now = datetime.now()
@@ -149,6 +171,7 @@ class World:
             if not self.room_exists(room):
                 raise FileNotFoundError(f"no room called {room!r}")
             spoken = f"{avatar}: {text.strip()}"
+            # Append-only fast path: the transcript is always the last section.
             with self.room_path(room).open("a", encoding="utf-8") as fh:
                 fh.write(f"{datetime.now().isoformat(timespec='seconds')}\t{spoken}\n")
             return spoken
@@ -158,7 +181,7 @@ class World:
         with self._lock:
             if not self.room_exists(room):
                 return 0
-            description, transcript = self._read_room(room)
+            description, protocol, transcript = self._read_room(room)
             now = datetime.now()
             kept: list[str] = []
             removed = 0
@@ -169,136 +192,45 @@ class World:
                 else:
                     kept.append(line)
             if removed:
-                self._write_room(room, description, "\n".join(kept))
+                self._write_room(room, description, protocol, "\n".join(kept))
             return removed
 
     def prune_all(self, ttl_seconds: float) -> int:
         with self._lock:
             return sum(self.prune_room(r, ttl_seconds) for r in self.list_rooms())
 
-    def _artifacts_dir(self, room: str) -> Path:
-        return self.root / "artifacts" / room
+    # --- the protocol: the room's durable, shared document ---
 
-    def _fixed_dir(self, room: str) -> Path:
-        return self._artifacts_dir(room) / "fixed"
-
-    def _inventory_dir(self, avatar: str) -> Path:
-        return self.root / "avatars" / avatar
-
-    def items_in_room(self, room: str) -> list[str]:
+    def read_protocol(self, room: str) -> str:
         with self._lock:
-            names: set[str] = set()
-            d = self._artifacts_dir(room)
-            if d.is_dir():
-                names.update(p.name for p in d.glob("*") if p.is_file())
-            fd = self._fixed_dir(room)
-            if fd.is_dir():
-                names.update(p.name for p in fd.glob("*") if p.is_file())
-            return sorted(names)
+            if not self.room_exists(room):
+                raise FileNotFoundError(f"no room called {room!r}")
+            _, protocol, _ = self._read_room(room)
+            if not protocol:
+                return "(no protocol yet — write one)"
+            if len(protocol) > MAX_READ_CHARS:
+                return (
+                    protocol[:MAX_READ_CHARS]
+                    + f"\n\n… (truncated — {len(protocol)} chars total, showing the first {MAX_READ_CHARS})"
+                )
+            return protocol
 
-    def is_fixed(self, room: str, item: str) -> bool:
+    def write_protocol(self, room: str, text: str) -> None:
+        """Replace the room's whole protocol document (the distilled common output).
+        Last writer wins — the session serialises all writes on one worker thread."""
         with self._lock:
-            return (self._fixed_dir(room) / item).is_file()
+            if not self.room_exists(room):
+                raise FileNotFoundError(f"no room called {room!r}")
+            _check_no_separator(text, "protocol")
+            description, _, transcript = self._read_room(room)
+            self._write_room(room, description, text.strip(), transcript)
 
-    def inventory(self, avatar: str) -> list[str]:
+    def append_protocol(self, room: str, text: str) -> None:
+        """Atomically append to the room's protocol — no read-modify-write race."""
         with self._lock:
-            d = self._inventory_dir(avatar)
-            return sorted(p.name for p in d.glob("*") if p.is_file()) if d.is_dir() else []
-
-    def read_item(self, room: str, item: str) -> str:
-        with self._lock:
-            _validate(item, "item", _ITEM_RE)
-            for d in (self._artifacts_dir(room), self._fixed_dir(room)):
-                path = d / item
-                if path.is_file():
-                    return path.read_text(encoding="utf-8")
-            raise FileNotFoundError(f"no item '{item}' in room '{room}'")
-
-    def read_carried(self, avatar: str, item: str) -> str:
-        with self._lock:
-            _validate(item, "item", _ITEM_RE)
-            path = self._inventory_dir(avatar) / item
-            if not path.is_file():
-                raise FileNotFoundError(f"you are not carrying '{item}'")
-            return path.read_text(encoding="utf-8")
-
-    def delete_item(self, room: str, item: str) -> None:
-        with self._lock:
-            _validate(item, "item", _ITEM_RE)
-            for d in (self._artifacts_dir(room), self._fixed_dir(room)):
-                path = d / item
-                if path.is_file():
-                    path.unlink()
-                    return
-            raise FileNotFoundError(f"no item '{item}' in room '{room}'")
-
-    def delete_carried(self, avatar: str, item: str) -> None:
-        with self._lock:
-            _validate(item, "item", _ITEM_RE)
-            path = self._inventory_dir(avatar) / item
-            if not path.is_file():
-                raise FileNotFoundError(f"you are not carrying '{item}'")
-            path.unlink()
-
-    def take(self, room: str, avatar: str, item: str) -> Path:
-        with self._lock:
-            _validate(item, "item", _ITEM_RE)
-            src = self._artifacts_dir(room) / item
-            if not src.is_file():
-                raise FileNotFoundError(f"no item '{item}' in room '{room}'")
-            dst_dir = self._inventory_dir(avatar)
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            dst = dst_dir / item
-            if dst.exists():
-                raise FileExistsError(f"{avatar!r} already carries {item!r}")
-            src.replace(dst)
-            return dst
-
-    def drop(self, avatar: str, room: str, item: str) -> Path:
-        with self._lock:
-            _validate(item, "item", _ITEM_RE)
-            src = self._inventory_dir(avatar) / item
-            if not src.is_file():
-                raise FileNotFoundError(f"you are not carrying '{item}'")
-            dst_dir = self._artifacts_dir(room)
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            dst = dst_dir / item
-            if dst.exists():
-                raise FileExistsError(f"{item!r} is already lying in room '{room}'")
-            src.replace(dst)
-            return dst
-
-    def put_item_in_room(self, room: str, item: str, content: str) -> Path:
-        with self._lock:
-            _validate(item, "item", _ITEM_RE)
-            dst_dir = self._artifacts_dir(room)
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            dst = dst_dir / item
-            dst.write_text(content, encoding="utf-8")
-            return dst
-
-    def create_item(self, room: str, item: str, content: str, *, kind: str = "item") -> Path:
-        """Atomically create a new item; raise FileExistsError if it already exists.
-        kind is "item" (portable, default) or "fixed" (cannot be taken)."""
-        with self._lock:
-            _validate(item, "item", _ITEM_RE)
-            if item == "fixed":
-                raise ValueError("item name 'fixed' is reserved")
-            dst_dir = self._fixed_dir(room) if kind == "fixed" else self._artifacts_dir(room)
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            dst = dst_dir / item
-            with dst.open("x", encoding="utf-8") as fh:
-                fh.write(content)
-            return dst
-
-    def modify_item(self, room: str, item: str, text: str) -> Path:
-        """Append text to an existing in-room item (portable or fixed)."""
-        with self._lock:
-            _validate(item, "item", _ITEM_RE)
-            for d in (self._artifacts_dir(room), self._fixed_dir(room)):
-                path = d / item
-                if path.is_file():
-                    content = path.read_text(encoding="utf-8")
-                    path.write_text(content + "\n" + text.strip(), encoding="utf-8")
-                    return path
-            raise FileNotFoundError(f"no item '{item}' in room '{room}'")
+            if not self.room_exists(room):
+                raise FileNotFoundError(f"no room called {room!r}")
+            _check_no_separator(text, "protocol")
+            description, protocol, transcript = self._read_room(room)
+            merged = (protocol + "\n\n" + text.strip()) if protocol else text.strip()
+            self._write_room(room, description, merged, transcript)

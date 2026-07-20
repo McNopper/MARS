@@ -1,16 +1,21 @@
 """The MARS world MCP server — the single door into the world.
 
-Every actor (your interface agent, the Dungeon Master, specialists) enters through this one
-MCP server. The verbs are the entire surface: look / listen / say / go / examine /
-take / drop / inventory / create / modify / destroy / rooms. Rooms are admin-authored
-contexts (the map); citizens live inside them. There is no parser and no second
-door; natural language becomes tool calls inside the connecting agent, never here.
+Every actor (your interface agent, specialists, remote agents) enters through this one
+MCP server. The verbs are the entire surface: look / listen / say / go / rooms /
+create_room / read / write / append. A room is a fixed description plus a shared,
+durable **protocol** document (the reduced common output of the conversation) plus a
+volatile transcript. There is no parser and no second door; natural language becomes
+tool calls inside the connecting agent, never here.
 
 Concurrency model: ``WorldSession`` owns a single worker thread that drains a
 command queue (tick ≈ 100 ms) and, on a slower tick (≈ 1000 ms), prunes expired
 talk. Every verb enqueues its operation and awaits the result, so all world access
 — including the prune — happens on that one thread and can never race. Talk lines
 carry a timestamp; lines older than the talk TTL are pruned (0 disables pruning).
+
+Note on clocks: the transcript uses wall-clock timestamps (persisted, meaningful
+across restarts — see ``world.py``), while presence uses ``time.monotonic()`` here
+because it is a pure in-memory interval that must survive clock jumps.
 """
 from __future__ import annotations
 
@@ -56,6 +61,11 @@ class WorldSession:
         self._thread.start()
 
     def _submit(self, fn) -> object:
+        # Fail fast if the worker thread is dead rather than hanging for the full timeout.
+        if not self._thread.is_alive():
+            raise RuntimeError(
+                "MARS worker thread is dead — the world server is no longer processing commands"
+            )
         fut: Future = Future()
         self._q.put((fn, fut))
         return fut.result(timeout=30)
@@ -144,94 +154,48 @@ class WorldSession:
             return self.world.look(room, present=self._present_in(room))
         return self._submit(op)
 
-    def take(self, avatar: str, item: str) -> str:
-        def op() -> str:
-            room = self._room_of(avatar)
-            try:
-                self.world.take(room, avatar, item)
-            except FileNotFoundError:
-                if self.world.is_fixed(room, item):
-                    return f"{item!r} is fixed here — you can't take it."
-                return f"There is no '{item}' here."
-            except (ValueError, FileExistsError) as exc:
-                return f"Could not take {item!r}: {exc}"
-            return f"Taken: {item}."
-        return self._submit(op)
-
-    def drop(self, avatar: str, item: str) -> str:
-        def op() -> str:
-            room = self._room_of(avatar)
-            try:
-                self.world.drop(avatar, room, item)
-            except (FileNotFoundError, ValueError, FileExistsError) as exc:
-                return f"Could not drop {item!r}: {exc}"
-            return f"Dropped: {item}."
-        return self._submit(op)
-
-    def inventory(self, avatar: str) -> str:
-        def op() -> str:
-            self.last_seen[avatar] = time.monotonic()
-            items = self.world.inventory(avatar)
-            return "You carry: " + (", ".join(items) if items else "nothing")
-        return self._submit(op)
-
-    def examine(self, avatar: str, item: str) -> str:
-        def op() -> str:
-            room = self._room_of(avatar)
-            try:
-                return self.world.read_item(room, item)
-            except FileNotFoundError:
-                try:
-                    return self.world.read_carried(avatar, item)
-                except FileNotFoundError:
-                    return f"There is no '{item}' here or in your inventory."
-        return self._submit(op)
-
-    def create(self, avatar: str, name: str, content: str, kind: str = "item") -> str:
-        def op() -> str:
-            if kind == "room":
-                parts = content.strip().split("\n", 1)
-                title = parts[0] or name
-                desc = parts[1].strip() if len(parts) > 1 else ""
-                try:
-                    self.world.create_room(name, title, desc)
-                except (FileExistsError, ValueError) as exc:
-                    return f"Could not build room {name!r}: {exc}"
-                return f"Built room: {name} — {title}."
-            room = self._room_of(avatar)
-            try:
-                self.world.create_item(room, name, content, kind=kind)
-            except FileExistsError:
-                return f"'{name}' already exists here. Take it first, or choose another name."
-            except ValueError as exc:
-                return f"Could not create {name!r}: {exc}"
-            return f"Created: {name} ({kind}) — left here in {room}."
-        return self._submit(op)
-
-    def modify(self, avatar: str, item: str, text: str) -> str:
-        def op() -> str:
-            room = self._room_of(avatar)
-            try:
-                self.world.modify_item(room, item, text)
-            except (FileNotFoundError, ValueError) as exc:
-                return f"Could not modify {item!r}: {exc}"
-            return f"Modified: {item}."
-        return self._submit(op)
-
-    def destroy(self, avatar: str, item: str) -> str:
-        def op() -> str:
-            room = self._room_of(avatar)
-            for delete, where in ((self.world.delete_item, room), (self.world.delete_carried, avatar)):
-                try:
-                    delete(where, item)
-                    return f"Destroyed: {item}."
-                except FileNotFoundError:
-                    continue
-            return f"There is no '{item}' here or in your inventory."
-        return self._submit(op)
-
     def rooms(self) -> str:
         return self._submit(lambda: "Rooms: " + (", ".join(self.world.list_rooms()) or "(none)"))
+
+    def create_room(self, avatar: str, name: str, content: str) -> str:
+        def op() -> str:
+            parts = content.strip().split("\n", 1)
+            title = parts[0].strip()
+            desc = parts[1].strip() if len(parts) > 1 else ""
+            try:
+                self.world.create_room(name, title, desc)
+            except (FileExistsError, ValueError) as exc:
+                return f"Could not build room {name!r}: {exc}"
+            return f"Built room: {name} — {title}."
+        return self._submit(op)
+
+    def read(self, avatar: str) -> str:
+        def op() -> str:
+            try:
+                return self.world.read_protocol(self._room_of(avatar))
+            except FileNotFoundError as exc:
+                return f"There is no room here. ({exc})"
+        return self._submit(op)
+
+    def write(self, avatar: str, text: str) -> str:
+        def op() -> str:
+            room = self._room_of(avatar)
+            try:
+                self.world.write_protocol(room, text)
+            except (FileNotFoundError, ValueError) as exc:
+                return f"Could not write the protocol: {exc}"
+            return "Protocol written."
+        return self._submit(op)
+
+    def append(self, avatar: str, text: str) -> str:
+        def op() -> str:
+            room = self._room_of(avatar)
+            try:
+                self.world.append_protocol(room, text)
+            except (FileNotFoundError, ValueError) as exc:
+                return f"Could not append to the protocol: {exc}"
+            return "Protocol updated."
+        return self._submit(op)
 
 
 _SESSION: WorldSession | None = None
@@ -250,20 +214,20 @@ def _session() -> WorldSession:
 
 @mcp.tool()
 def look(avatar: str, room: str | None = None) -> str:
-    """See a room: its description, the avatars present, and the items lying here.
+    """See a room: its fixed description, the avatars present, and a hint at its protocol.
     If `room` is omitted, looks at the room you currently stand in."""
     return _session().look(avatar, room)
 
 
 @mcp.tool()
 def listen(avatar: str, lines: int = 20) -> str:
-    """Read what has recently been said in the room you stand in (the transcript tail)."""
+    """Read what has recently been said in the room you stand in (the volatile transcript tail)."""
     return _session().listen(avatar, lines)
 
 
 @mcp.tool()
 def say(avatar: str, text: str) -> str:
-    """Speak aloud in the room you stand in. Everyone present hears it; it is recorded."""
+    """Speak aloud in the room you stand in. Everyone present hears it; it is recorded (and fades)."""
     return _session().say(avatar, text)
 
 
@@ -274,52 +238,36 @@ def go(avatar: str, room: str) -> str:
 
 
 @mcp.tool()
-def take(avatar: str, item: str) -> str:
-    """Pick up an item lying in the room you stand in. It moves to your inventory."""
-    return _session().take(avatar, item)
-
-
-@mcp.tool()
-def drop(avatar: str, item: str) -> str:
-    """Drop an item from your inventory into the room you stand in."""
-    return _session().drop(avatar, item)
-
-
-@mcp.tool()
-def inventory(avatar: str) -> str:
-    """List the items you are currently carrying."""
-    return _session().inventory(avatar)
-
-
-@mcp.tool()
-def examine(avatar: str, item: str) -> str:
-    """Read the contents of an item — one lying in the room, or one you carry."""
-    return _session().examine(avatar, item)
-
-
-@mcp.tool()
-def create(avatar: str, name: str, content: str, kind: str = "item") -> str:
-    """Author something new. kind: "item" (portable, default), "fixed" (can't be taken — a sign,
-    a statue), or "room" (a new room you can go to; content is "Title\\n\\nDescription")."""
-    return _session().create(avatar, name, content, kind)
-
-
-@mcp.tool()
-def modify(avatar: str, item: str, text: str) -> str:
-    """Append text to an existing item in the room (a note or whiteboard that grows over time)."""
-    return _session().modify(avatar, item, text)
-
-
-@mcp.tool()
-def destroy(avatar: str, item: str) -> str:
-    """Destroy an item — one lying in the room you stand in, or one you carry. Gone for good."""
-    return _session().destroy(avatar, item)
-
-
-@mcp.tool()
 def rooms() -> str:
     """List all rooms that exist in the world."""
     return _session().rooms()
+
+
+@mcp.tool()
+def create_room(avatar: str, name: str, content: str) -> str:
+    """Build a new room you and others can go to. content is "Title\\n\\nDescription".
+    The description is then fixed — the room is a durable context boundary."""
+    return _session().create_room(avatar, name, content)
+
+
+@mcp.tool()
+def read(avatar: str) -> str:
+    """Read the room's protocol — the durable document everyone here works on
+    (a contract, backlog, or minutes: the common, reduced output of the conversation)."""
+    return _session().read(avatar)
+
+
+@mcp.tool()
+def write(avatar: str, text: str) -> str:
+    """Replace the room's whole protocol document. Use it to distil the conversation
+    into a clean, reduced contract. Last writer wins; prefer append for simple additions."""
+    return _session().write(avatar, text)
+
+
+@mcp.tool()
+def append(avatar: str, text: str) -> str:
+    """Append to the room's protocol document. Atomic — no read-modify-write race."""
+    return _session().append(avatar, text)
 
 
 def main(argv: list[str] | None = None) -> None:

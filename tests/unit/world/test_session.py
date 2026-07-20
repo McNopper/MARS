@@ -1,4 +1,4 @@
-"""Unit tests for WorldSession — presence and the verb surface over a World."""
+"""Unit tests for WorldSession - presence and the verb surface over a World."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,7 +12,8 @@ from mars.world.server import WorldSession
 @pytest.fixture()
 def session(tmp_path: Path):
     w = World(tmp_path / "world")
-    w.init()
+    w.init()  # seeds only lobby
+    w.create_room("library", "The Library", "A second room for isolation tests.")  # dynamic
     s = WorldSession(w, talk_ttl=0, presence_ttl=0)  # TTLs off so tests don't race the pruner
     yield s
     s.shutdown()
@@ -54,37 +55,33 @@ class TestSpeechAcrossAvatars:
         assert "hello from the library" not in session.listen("you")
 
 
-class TestItemsThroughSession:
-    def test_take_then_inventory_then_drop(self, session: WorldSession) -> None:
-        session.world.put_item_in_room("lobby", "map.txt", "X")
-        assert "Taken" in session.take("you", "map.txt")
-        assert "map.txt" in session.inventory("you")
+class TestProtocolThroughSession:
+    def test_write_read_append(self, session: WorldSession) -> None:
         session.go("you", "library")
-        assert "Dropped" in session.drop("you", "map.txt")
-        assert "nothing" in session.inventory("you")
+        assert "Protocol written" in session.write("you", "the rules")
+        assert session.read("you") == "the rules"
+        assert "Protocol updated" in session.append("you", "rule 2")
+        assert "the rules" in session.read("you")
+        assert "rule 2" in session.read("you")
 
-    def test_take_missing_item_is_friendly(self, session: WorldSession) -> None:
-        assert "no 'ghost.txt'" in session.take("you", "ghost.txt").lower()
+    def test_protocol_is_per_room(self, session: WorldSession) -> None:
+        session.write("you", "lobby deal")  # default room is lobby
+        session.go("you", "library")
+        assert session.read("you") == "(no protocol yet — write one)"
+        session.go("you", "lobby")
+        assert session.read("you") == "lobby deal"
 
-    def test_second_taker_is_told_the_item_is_gone(self, session: WorldSession) -> None:
-        session.world.put_item_in_room("lobby", "book.txt", "pages")
-        session.go("alice", "lobby")
-        session.go("bob", "lobby")
-        assert "Taken" in session.take("alice", "book.txt")
-        result = session.take("bob", "book.txt")
-        assert "no 'book.txt'" in result.lower()
+    def test_look_hints_at_protocol(self, session: WorldSession) -> None:
+        session.write("you", "1. first\n2. second")
+        assert "Protocol: 2 line(s)" in session.look("you")
 
-    def test_examine_reads_item_in_room(self, session: WorldSession) -> None:
-        session.world.put_item_in_room("lobby", "note.txt", "the password is 1234")
-        assert "the password is 1234" in session.examine("you", "note.txt")
+    def test_write_rejects_separator_friendlily(self, session: WorldSession) -> None:
+        msg = session.write("you", "above\n\n---\n\nbelow")
+        assert "Could not write" in msg
 
-    def test_examine_reads_carried_item_after_take(self, session: WorldSession) -> None:
-        session.world.put_item_in_room("lobby", "note.txt", "secret")
-        session.take("you", "note.txt")
-        assert "secret" in session.examine("you", "note.txt")
-
-    def test_examine_missing_item_is_friendly(self, session: WorldSession) -> None:
-        assert "no 'ghost.txt'" in session.examine("you", "ghost.txt")
+    def test_append_to_empty(self, session: WorldSession) -> None:
+        assert "Protocol updated" in session.append("you", "just this")
+        assert session.read("you") == "just this"
 
 
 def test_rooms_lists_all(session: WorldSession) -> None:
@@ -124,37 +121,26 @@ def test_active_avatar_stays(tmp_path: Path) -> None:
 
 
 class TestAuthoring:
-    def test_create_then_examine_then_destroy(self, session: WorldSession) -> None:
-        assert "Created" in session.create("you", "note.txt", "hello world")
-        assert "hello world" in session.examine("you", "note.txt")
-        assert "Destroyed" in session.destroy("you", "note.txt")
-        assert "no 'note.txt'" in session.examine("you", "note.txt")
-
-    def test_create_duplicate_refused(self, session: WorldSession) -> None:
-        session.create("you", "note.txt", "v1")
-        msg = session.create("you", "note.txt", "v2")
-        assert "already exists" in msg
-        assert session.examine("you", "note.txt") == "v1"
-
-    def test_create_then_take(self, session: WorldSession) -> None:
-        session.create("you", "book.txt", "Once upon a time...")
-        assert "Taken" in session.take("you", "book.txt")
-        assert "book.txt" in session.inventory("you")
-
-    def test_fixed_item_cannot_be_taken(self, session: WorldSession) -> None:
-        assert "Created" in session.create("you", "sign.txt", "Wet paint", kind="fixed")
-        assert "sign.txt" in session.look("you")              # visible in the room
-        assert "fixed" in session.take("you", "sign.txt").lower()
-        assert "sign.txt" not in session.inventory("you")     # not taken
-        assert "Wet paint" in session.examine("you", "sign.txt")  # but examinable
-        assert "Destroyed" in session.destroy("you", "sign.txt")
-
-    def test_modify_grows_an_item(self, session: WorldSession) -> None:
-        session.create("you", "board.md", "line one")
-        assert "Modified" in session.modify("you", "board.md", "line two")
-        content = session.examine("you", "board.md")
-        assert "line one" in content and "line two" in content
-
-    def test_create_makes_a_room(self, session: WorldSession) -> None:
-        assert "Built room" in session.create("you", "garden", "The Garden\nA quiet green space.", kind="room")
+    def test_create_room_via_session(self, session: WorldSession) -> None:
+        msg = session.create_room("you", "garden", "The Garden\nA quiet green space.")
+        assert "Built room" in msg
         assert "Garden" in session.go("you", "garden")
+
+    def test_create_room_rejects_duplicate(self, session: WorldSession) -> None:
+        msg = session.create_room("you", "lobby", "Dup\nDesc.")
+        assert "Could not build" in msg
+
+    def test_create_room_rejects_empty_title(self, session: WorldSession) -> None:
+        msg = session.create_room("you", "void", "   ")  # blank title after strip
+        assert "Could not build" in msg
+
+
+def test_dead_worker_thread_fails_fast(tmp_path: Path) -> None:
+    """If the worker thread has died, verbs fail immediately instead of hanging for 30s."""
+    w = World(tmp_path / "world")
+    w.init()
+    s = WorldSession(w, talk_ttl=0, presence_ttl=0)
+    s.shutdown()
+    assert not s._thread.is_alive()
+    with pytest.raises(RuntimeError, match="worker thread is dead"):
+        s.look("you")
