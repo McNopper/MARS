@@ -43,6 +43,15 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-]*$")
 
 MAX_READ_CHARS = 64_000  # protocol reads are capped at this many characters (truncated with a note)
 
+# Fallback used only when no LOBBY.md sits next to the world dir. The canonical lobby
+# text lives in LOBBY.md at the repo root — edit that file to change what newcomers see.
+DEFAULT_LOBBY_TITLE = "The Lobby"
+DEFAULT_LOBBY_DESCRIPTION = (
+    "MARS is a chat server where humans and AI agents meet as avatars in text rooms "
+    "and coordinate by talking. This is the entry room — other rooms branch off from here. "
+    "Look around, listen, then go."
+)
+
 
 def _validate(name: str, label: str, pattern: re.Pattern[str]) -> str:
     if not name or not pattern.match(name) or name in (".", ".."):
@@ -58,19 +67,36 @@ def _check_no_separator(text: str, label: str) -> None:
 
 
 class World:
-    def __init__(self, root: Path | str = "world") -> None:
+    def __init__(self, root: Path | str = "world", *, lobby_path: Path | str | None = None) -> None:
         self.root = Path(root)
+        # LOBBY.md is sought next to the world dir by default — so a checkout run from
+        # the repo root finds ./LOBBY.md, and MARS_WORLD_DIR=/data/world finds /data/LOBBY.md.
+        self.lobby_path = Path(lobby_path) if lobby_path is not None else self.root.parent / "LOBBY.md"
         self._lock = threading.RLock()
 
     def init(self, *, lobby: bool = True) -> None:
         with self._lock:
             (self.root / "rooms").mkdir(parents=True, exist_ok=True)
             if lobby and not self.room_exists("lobby"):
-                self.create_room(
-                    "lobby",
-                    "The Lobby",
-                    "A bright, open room. The MARS world starts here.",
-                )
+                title, description = self._lobby_seed()
+                self.create_room("lobby", title, description)
+
+    def _lobby_seed(self) -> tuple[str, str]:
+        """Return ``(title, description)`` for seeding the lobby.
+
+        Reads ``self.lobby_path`` if it exists (first non-empty line is the title,
+        optionally a ``#`` markdown heading; the rest is the description), otherwise
+        falls back to the built-in default. Mirrors the ``create_room`` content
+        convention (``"Title\\n\\nDescription"``)."""
+        path = self.lobby_path
+        with self._lock:
+            if not path.is_file():
+                return DEFAULT_LOBBY_TITLE, DEFAULT_LOBBY_DESCRIPTION
+            content = path.read_text(encoding="utf-8").strip()
+            parts = content.split("\n", 1)
+            title = parts[0].strip().lstrip("#").strip() or DEFAULT_LOBBY_TITLE
+            description = parts[1].strip() if len(parts) > 1 else ""
+            return title, description
 
     def room_path(self, room: str) -> Path:
         _validate(room, "room", _NAME_RE)

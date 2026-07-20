@@ -24,6 +24,31 @@ class TestRooms:
         assert (world.root / "rooms").is_dir()
         assert world.list_rooms() == ["lobby"]  # nothing else seeded; the rest is dynamic
 
+    def test_lobby_seed_reads_lobby_md(self, tmp_path: Path) -> None:
+        (tmp_path / "LOBBY.md").write_text("The Lobby\nA custom description for newcomers.", encoding="utf-8")
+        w = World(tmp_path / "world")
+        w.init()
+        view = w.look("lobby")
+        assert "The Lobby" in view
+        assert "A custom description for newcomers." in view
+
+    def test_lobby_seed_tolerates_markdown_heading(self, tmp_path: Path) -> None:
+        (tmp_path / "LOBBY.md").write_text("# The Lobby\n\nDesc with heading.", encoding="utf-8")
+        w = World(tmp_path / "world")
+        w.init()
+        view = w.look("lobby")
+        # create_room always writes the title as a single `# ` heading; the `#` from
+        # LOBBY.md must be stripped first, otherwise the file would start with `# # The Lobby`.
+        assert view.split("\n", 1)[0] == "# The Lobby"
+        assert "Desc with heading." in view
+
+    def test_lobby_seed_falls_back_when_file_missing(self, world: World) -> None:
+        # The `world` fixture has no LOBBY.md nearby → uses the built-in default.
+        assert not world.lobby_path.is_file()
+        view = world.look("lobby")
+        assert "The Lobby" in view
+        assert "MARS is a chat server" in view
+
     def test_no_artifacts_or_avatars_dirs(self, world: World) -> None:
         assert not (world.root / "artifacts").exists()
         assert not (world.root / "avatars").exists()
